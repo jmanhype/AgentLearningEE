@@ -70,8 +70,13 @@ def mock_lm():
     """Configure language model for integration testing."""
     import os
 
-    # Set OpenRouter API key
-    os.environ["OPENAI_API_KEY"] = "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"
+    # Use API key from environment variable
+    # Set OPENROUTER_API_KEY environment variable before running tests
+    api_key = os.environ.get("OPENROUTER_API_KEY")
+    if not api_key:
+        pytest.skip("OPENROUTER_API_KEY environment variable not set")
+
+    os.environ["OPENAI_API_KEY"] = api_key
     os.environ["OPENAI_API_BASE"] = "https://openrouter.ai/api/v1"
 
     # Use a fast, cost-effective model available on OpenRouter

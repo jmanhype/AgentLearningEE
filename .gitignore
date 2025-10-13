@@ -31,6 +31,10 @@ ENV/
 env.bak/
 venv.bak/
 
+# Environment variables (API keys, secrets)
+.env
+.env.local
+
 # PyCharm
 .idea/
 

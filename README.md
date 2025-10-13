@@ -217,6 +217,20 @@ agent-learning-ee/
 
 ## 🧪 Testing
 
+### Environment Setup for Tests
+
+Integration tests require an OpenRouter API key:
+
+```bash
+# Set API key for testing
+export OPENROUTER_API_KEY="sk-or-v1-your-key-here"
+
+# Alternative: Create .env file in project root
+echo 'OPENROUTER_API_KEY=sk-or-v1-your-key-here' > .env
+```
+
+⚠️ **Security Note**: Never commit API keys to version control. The test suite reads keys from environment variables only.
+
 ### Run All Tests
 
 ```bash
