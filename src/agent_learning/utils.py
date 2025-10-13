@@ -100,11 +100,11 @@ def save_module(
     """
     Save DSPy module to binary file with optional metadata.
 
-    Wrapper around dspy.save() with path handling and metadata support.
+    Uses DSPy 2.0 module.save() instance method for serialization.
 
     Args:
         module: Trained DSPy module (Predict, ChainOfThought, etc.)
-        file_path: Output path for .bin file
+        file_path: Output path for .pkl file
         metadata: Optional metadata dict (training_data, accuracy, timestamp, etc.)
 
     Example:
@@ -112,15 +112,15 @@ def save_module(
         >>> # ... train world_model ...
         >>> save_module(
         ...     world_model,
-        ...     "artifacts/world_model.bin",
+        ...     "artifacts/world_model.pkl",
         ...     metadata={"accuracy": 0.75, "timestamp": datetime.now().isoformat()}
         ... )
     """
     file_path = Path(file_path)
     file_path.parent.mkdir(parents=True, exist_ok=True)
 
-    # Save module using DSPy's native serialization
-    dspy.save(module, str(file_path))
+    # Save module using DSPy 2.0 instance method
+    module.save(str(file_path))
 
     # Save metadata separately if provided
     if metadata:
@@ -133,10 +133,10 @@ def load_module(file_path: Union[str, Path]) -> dspy.Module:
     """
     Load DSPy module from binary file.
 
-    Wrapper around dspy.load() with path handling.
+    Uses pickle to load modules saved with DSPy 2.0 module.save().
 
     Args:
-        file_path: Path to .bin file
+        file_path: Path to .pkl file
 
     Returns:
         Loaded DSPy module
@@ -145,15 +145,19 @@ def load_module(file_path: Union[str, Path]) -> dspy.Module:
         FileNotFoundError: If file doesn't exist
 
     Example:
-        >>> world_model = load_module("artifacts/world_model.bin")
+        >>> world_model = load_module("artifacts/world_model.pkl")
         >>> prediction = world_model(state="...", action="...")
     """
+    import pickle
+
     file_path = Path(file_path)
 
     if not file_path.exists():
         raise FileNotFoundError(f"Module file not found: {file_path}")
 
-    return dspy.load(str(file_path))
+    # DSPy 2.0 modules are saved as pickle files
+    with open(file_path, "rb") as f:
+        return pickle.load(f)
 
 
 def load_metadata(file_path: Union[str, Path]) -> Optional[Dict[str, Any]]:
@@ -161,7 +165,7 @@ def load_metadata(file_path: Union[str, Path]) -> Optional[Dict[str, Any]]:
     Load metadata for a saved module.
 
     Args:
-        file_path: Path to .bin file (will look for .meta.json)
+        file_path: Path to .pkl file (will look for .meta.json)
 
     Returns:
         Metadata dictionary if exists, None otherwise

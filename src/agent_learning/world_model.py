@@ -83,7 +83,7 @@ class WorldModelModule(dspy.Module):
 
 def train_world_model(
     expert_demos_path: str,
-    output_path: str = "artifacts/world_model.bin",
+    output_path: str = "artifacts/world_model.pkl",
     test_split: float = 0.2,
     random_seed: int = 42,
     max_bootstrapped_demos: int = 8,
@@ -376,7 +376,7 @@ def predict_next_state(
 # Convenience Functions
 # ============================================================================
 
-def load_trained_world_model(model_path: str = "artifacts/world_model.bin") -> WorldModelModule:
+def load_trained_world_model(model_path: str = "artifacts/world_model.pkl") -> WorldModelModule:
     """
     Load a previously trained world model.
 

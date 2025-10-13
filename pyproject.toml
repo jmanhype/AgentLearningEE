@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "agent-learning-ee"
-version = "0.1.0"
+version = "0.2.0"
 description = "Agent Learning via Early Experience - Bootstrapped agent training without reward signals"
 readme = "README.md"
 requires-python = ">=3.11"

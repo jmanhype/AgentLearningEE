@@ -67,3 +67,9 @@ data/reflection_data.jsonl
 # Logs
 *.log
 logs/
+
+# Claude Flow metrics (environment-specific)
+.claude-flow/
+
+# Python version files
+.python-version
