@@ -77,3 +77,9 @@ logs/
 
 # Python version files
 .python-version
+
+# ACE integration artifacts
+*.db
+ace_playbook.db
+ace_demo.db
+faiss_indices/

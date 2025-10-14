@@ -5,7 +5,7 @@
 [![Python 3.11+](https://img.shields.io/badge/python-3.11+-blue.svg)](https://www.python.org/downloads/)
 [![DSPy 2.0](https://img.shields.io/badge/dspy-2.0-green.svg)](https://github.com/stanfordnlp/dspy)
 [![Tests](https://img.shields.io/badge/tests-passing-brightgreen.svg)](#testing)
-[![Version](https://img.shields.io/badge/version-0.2.0-blue.svg)](#releases)
+[![Version](https://img.shields.io/badge/version-0.3.0-blue.svg)](#releases)
 
 This repository implements a complete agent learning system that learns from expert demonstrations without reward signals. The agent develops structured reasoning capabilities through a 4-stage pipeline that generates self-reflective decision-making with explicit alternatives analysis.
 
@@ -29,6 +29,19 @@ This repository implements a complete agent learning system that learns from exp
 - 🎯 **Self-Reflective Policy**: Makes decisions by explicitly comparing alternatives
 - 📊 **Comprehensive Testing**: Parameterized tests across dataset scales (10, 50, 75+ demos)
 - ✅ **Quality Validation**: Ensures expansion ratio, alternative coverage, and reasoning structure
+- 🔄 **ACE Integration (Optional)**: Adaptive Code Evolution playbook for continuous self-improvement
+
+### ACE Integration (Adaptive Code Evolution)
+
+**Optional** integration with [ACE playbook system](https://github.com/yourusername/ace-playbook) for continuous learning:
+
+- **Self-Reflection → Playbook**: Converts EE reflections into ACE insights with semantic deduplication
+- **Playbook → Policy Context**: Injects accumulated knowledge at inference time
+- **FAISS Semantic Search**: 0.80 similarity threshold prevents duplicate insights
+- **Multi-Stage Deployment**: Shadow → Staging → Prod promotion gates
+- **Append-Only Knowledge**: No forgetting, no context collapse
+
+The system works standalone without ACE. When enabled, it creates a continuous learning loop where agent reflections improve future decisions.
 
 ---
 
@@ -46,7 +59,44 @@ pip install -e .
 
 # For development with tests
 pip install -e ".[dev]"
+
+# Optional: Install ACE dependencies for playbook integration
+pip install sentence-transformers faiss-cpu sqlalchemy alembic structlog
 ```
+
+### Optional: ACE Integration Setup
+
+To enable continuous learning through ACE playbook:
+
+```bash
+# 1. Clone ACE repository (or use your ACE installation)
+git clone https://github.com/yourusername/ace-playbook.git /path/to/ace-playbook
+
+# 2. Configure environment
+source .env.ace
+
+# Or manually set:
+export ACE_ENABLED=1
+export ACE_DOMAIN_ID="agent-learning"
+export ACE_TARGET_STAGE="shadow"
+export ACE_SIMILARITY_THRESHOLD="0.80"
+export ACE_TOKEN_BUDGET="3500"
+export DATABASE_URL="sqlite:///ace_playbook.db"
+export PYTHONPATH="/path/to/ace-playbook:$PYTHONPATH"
+
+# 3. Initialize ACE database
+python -c "
+from sqlalchemy import create_engine
+from ace.models.base import Base
+engine = create_engine('sqlite:///ace_playbook.db')
+Base.metadata.create_all(engine)
+"
+
+# 4. Test integration
+python examples/ace_integration_demo.py
+```
+
+**Result**: Training pipeline will now seed ACE playbook with reflections, and policy will inject playbook context at inference.
 
 ### Prerequisites
 
@@ -112,15 +162,23 @@ agent-learning-ee/
 ├── README.md                           # This file
 ├── pyproject.toml                      # Package configuration
 ├── .gitignore                          # Git ignore rules
+├── .env.ace                            # ACE configuration template
 │
 ├── src/agent_learning/                 # Core implementation
 │   ├── __init__.py
 │   ├── world_model.py                  # State transition prediction
 │   ├── exploration.py                  # Alternative action generation
 │   ├── reflection.py                   # Structured reasoning generation
-│   ├── policy.py                       # Self-reflective decision-making
+│   ├── policy.py                       # Self-reflective decision-making (ACE-aware)
 │   ├── pipeline.py                     # End-to-end orchestration
 │   └── utils.py                        # JSONL, logging, metrics, serialization
+│
+├── src/ee_ace_bridge/                  # ACE integration (optional)
+│   ├── __init__.py                     # Feature flags, exports
+│   ├── translate.py                    # EE → ACE schema translation
+│   ├── config_extra.py                 # Extended ACE configuration
+│   ├── ace_client.py                   # InProcessAceClient, InMemoryAceClient
+│   └── contracts.py                    # Type definitions, protocols
 │
 ├── tests/                              # Test suite
 │   ├── fixtures/
@@ -135,8 +193,15 @@ agent-learning-ee/
 │   │   ├── test_policy.py
 │   │   └── test_pipeline_module.py
 │   │
-│   └── integration/
-│       └── test_pipeline.py            # End-to-end integration tests
+│   ├── integration/
+│   │   └── test_pipeline.py            # End-to-end integration tests
+│   │
+│   └── ee_ace_bridge/                  # ACE integration tests
+│       ├── conftest.py                 # Test configuration
+│       └── test_ace_integration.py     # Wire compatibility tests
+│
+├── examples/                           # Example scripts
+│   └── ace_integration_demo.py         # Full ACE integration demo
 │
 ├── data/                               # Training data (generated)
 │   ├── expert_demos.jsonl
@@ -147,6 +212,9 @@ agent-learning-ee/
 │   ├── world_model.pkl
 │   ├── policy.pkl
 │   └── *.meta.json                     # Model metadata
+│
+├── contracts/                          # Technical contracts
+│   └── success_criteria.yaml           # Module success criteria
 │
 └── docs/                               # Additional documentation
     ├── research.md                     # Comprehensive DSPy research
@@ -184,6 +252,27 @@ agent-learning-ee/
                                                                       Trained Policy
                                                                       artifacts/
                                                                       policy.pkl
+                                                                              │
+                                                                              │
+                                        ┌─────────────────────────────────────┘
+                                        │
+                                        v
+                            ┌──────────────────────────┐
+                            │  ACE Playbook (Optional) │ <──┐
+                            │  - Semantic Dedup (FAISS)│    │
+                            │  - Multi-stage (Shadow)  │    │
+                            │  - Append-only Storage   │    │
+                            └──────────────────────────┘    │
+                                        │                   │
+                                        │ Playbook Context  │ Reflections
+                                        v                   │
+                            ┌──────────────────────────┐    │
+                            │  Policy Inference        │ ───┘
+                            │  (With Playbook Context) │
+                            └──────────────────────────┘
+                                        │
+                                        v
+                                  Better Decisions
 ```
 
 ### Stage Details
@@ -406,6 +495,70 @@ reasoning, action = generate_decision(
 # Policy reasons about why to decelerate vs maintain vs accelerate
 print(f"Decision: {action}")
 print(f"Reasoning shows alternatives analysis: {reasoning}")
+```
+
+### ACE Integration (Optional)
+
+Enable continuous learning through playbook accumulation:
+
+```python
+from agent_learning.policy import train_policy
+
+# ACE automatically activates if ACE_ENABLED=1 in environment
+policy, metrics = train_policy(
+    reflection_data_path="data/reflection_data.jsonl",
+    output_path="artifacts/policy.pkl",
+)
+
+# Training automatically seeds ACE playbook with reflections
+# Inference automatically injects playbook context before decisions
+```
+
+**ACE Flow**:
+1. **Training**: Reflections → ACE insights → Playbook database (shadow stage)
+2. **Promotion**: Shadow → Staging → Prod (manual or automated gates)
+3. **Inference**: Load playbook context → Inject into policy prompt → Better decisions
+
+**Key Features**:
+- **Semantic Deduplication**: FAISS cosine similarity (0.80 threshold) prevents duplicates
+- **Counter Tracking**: Helpful/harmful votes track insight reliability
+- **Stage Isolation**: New insights start in "shadow", promoting validates safety
+- **Append-Only**: No forgetting, all historical insights preserved
+- **Domain Isolation**: Multi-tenant support via domain_id
+
+**Demo**:
+```bash
+# Test full ACE integration
+python examples/ace_integration_demo.py
+
+# Expected output:
+# ✓ Schema translation working
+# ✓ Deduplication working (3 duplicates detected)
+# ✓ Playbook rendering: 5 insights
+# ✓ Health check: healthy
+```
+
+**Monitoring**:
+```python
+from ee_ace_bridge.ace_client import InProcessAceClient
+
+client = InProcessAceClient(domain_id="agent-learning")
+
+# Get health status
+health = client.get_health()
+print(f"Status: {health['status']}")
+print(f"Insights Ingested: {health['insights_ingested']}")
+print(f"Stage Counts: {health['stage_counts']}")
+
+# Get insight counts
+section_count = client.get_section_count()
+insight_count = client.get_insight_count()
+print(f"Sections: {section_count}")
+print(f"Total Insights: {insight_count}")
+
+# Render current playbook
+playbook = client.render_playbook(token_budget=3500)
+print(playbook)
 ```
 
 ---
@@ -688,7 +841,16 @@ print(f"Training date: {metadata['timestamp']}")
 
 ## 📝 Releases
 
-### v0.2.0 (Current)
+### v0.3.0 (Current)
+- ✅ **ACE Bridge Integration**: Optional continuous learning via ACE playbook
+- ✅ **InProcessAceClient**: Direct integration with ACE CuratorService
+- ✅ **FAISS Semantic Deduplication**: 0.80 similarity threshold for insight management
+- ✅ **Schema Translation**: EE reflections → ACE insights (Helpful/Harmful/Neutral)
+- ✅ **Multi-Stage Deployment**: Shadow → Staging → Prod promotion gates
+- ✅ **Integration Tests**: Full wire compatibility validation
+- ✅ **Demo Script**: Comprehensive ACE integration demonstration
+
+### v0.2.0
 - ✅ Complete 4-stage pipeline implementation
 - ✅ Comprehensive unit and integration tests
 - ✅ Parameterized testing infrastructure
