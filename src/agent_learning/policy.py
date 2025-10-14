@@ -26,34 +26,45 @@ from .utils import (
 try:
     from ee_ace_bridge import (
         InMemoryAceClient,
+        ACE_INTEGRATION_AVAILABLE,
         reflection_to_insight,
         augment_state_with_playbook,
         config as ace_config,
     )
+    # Try to import InProcessAceClient if ACE repo is available
+    if ACE_INTEGRATION_AVAILABLE:
+        from ee_ace_bridge import InProcessAceClient as AceClientImpl
+    else:
+        AceClientImpl = InMemoryAceClient
     ACE_AVAILABLE = True
 except ImportError:
     ACE_AVAILABLE = False
+    ACE_INTEGRATION_AVAILABLE = False
     ace_config = None
+    AceClientImpl = None
 
 
 # ============================================================================
 # Global ACE Client Instance
 # ============================================================================
 
-_ace_client: Optional['InMemoryAceClient'] = None
+_ace_client: Optional[Any] = None
 
 def get_ace_client():
     """
     Get or create global ACE client instance.
 
+    Uses InProcessAceClient (ACE CuratorService) if ACE repo available,
+    otherwise falls back to InMemoryAceClient stub.
+
     Returns:
-        InMemoryAceClient instance, or None if ACE not available
+        AceClient instance (InProcessAceClient or InMemoryAceClient), or None if ACE not available
     """
     global _ace_client
     if not ACE_AVAILABLE:
         return None
     if _ace_client is None:
-        _ace_client = InMemoryAceClient()
+        _ace_client = AceClientImpl()
     return _ace_client
 
 

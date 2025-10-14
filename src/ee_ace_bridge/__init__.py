@@ -39,6 +39,27 @@ from .config import (
     ACE_ENDPOINT,
 )
 
+# Extended config and clients (require ACE repo)
+try:
+    from .config_extra import (
+        ACE_DOMAIN_ID,
+        ACE_TARGET_STAGE,
+        ACE_SIMILARITY_THRESHOLD,
+        validate_domain_id,
+    )
+    from .ace_client import InProcessAceClient
+    from .translate import bridge_to_ace_insight, bridge_batch_to_ace
+    ACE_INTEGRATION_AVAILABLE = True
+except ImportError:
+    ACE_INTEGRATION_AVAILABLE = False
+    ACE_DOMAIN_ID = None
+    ACE_TARGET_STAGE = None
+    ACE_SIMILARITY_THRESHOLD = None
+    InProcessAceClient = None  # type: ignore
+    validate_domain_id = None  # type: ignore
+    bridge_to_ace_insight = None  # type: ignore
+    bridge_batch_to_ace = None  # type: ignore
+
 __all__ = [
     "AceClient",
     "InMemoryAceClient",
@@ -48,6 +69,15 @@ __all__ = [
     "ACE_SECTIONS",
     "ACE_TOKEN_BUDGET",
     "ACE_ENDPOINT",
+    # Extended ACE integration (optional)
+    "ACE_INTEGRATION_AVAILABLE",
+    "ACE_DOMAIN_ID",
+    "ACE_TARGET_STAGE",
+    "ACE_SIMILARITY_THRESHOLD",
+    "InProcessAceClient",
+    "validate_domain_id",
+    "bridge_to_ace_insight",
+    "bridge_batch_to_ace",
 ]
 
 __version__ = "0.1.0"
