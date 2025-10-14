@@ -220,26 +220,16 @@ class LiveExplorationLoop:
         """
         policy = self._load_policy()
 
-        # Get playbook context if ACE enabled
-        playbook_context = ""
-        ace_client = self._get_ace_client()
-        if ace_client:
-            try:
-                from ee_ace_bridge import augment_state_with_playbook
-
-                playbook_context = augment_state_with_playbook(
-                    client=ace_client,
-                    state=state,
-                    token_budget=3500,
-                )
-            except Exception as e:
-                self.logger.warning(f"Playbook augmentation failed: {e}")
-
-        # Generate decision
+        # Generate decision (ACE integration handled internally now)
         from agent_learning.policy import generate_decision
 
-        reasoning, action = generate_decision(policy, state, playbook_context)
+        result = generate_decision(policy, state, self.logger)
 
+        # Handle failure case
+        if result is None:
+            raise RuntimeError(f"Policy failed to generate decision for state: {state[:100]}...")
+
+        reasoning, action = result
         return action, reasoning
 
     def _collect_episode(self) -> Optional[Episode]:

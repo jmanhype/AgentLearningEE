@@ -601,4 +601,10 @@ def load_trained_policy(model_path: str = "artifacts/policy.pkl") -> PolicyModul
         >>> policy = load_trained_policy()
         >>> reasoning, action = generate_decision(policy, "state description")
     """
-    return load_module(model_path)
+    # Create new PolicyModule instance
+    policy = PolicyModule()
+
+    # Load saved state into it (DSPy 2.0 pattern)
+    policy.load(str(model_path))
+
+    return policy

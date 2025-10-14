@@ -27,8 +27,28 @@ os.environ.setdefault("ACE_ENABLED", "1")
 os.environ.setdefault("ACE_DOMAIN_ID", "live-loop-demo")
 os.environ.setdefault("ACE_TARGET_STAGE", "shadow")
 
+import dspy
 from agent_learning.live_loop import LiveExplorationLoop, LiveLoopConfig
 from agent_learning.utils import setup_logger
+
+# Configure DSPy LM for inference
+# Requires OPENAI_API_KEY and OPENAI_API_BASE environment variables
+if not os.getenv('OPENAI_API_KEY'):
+    print("❌ Error: OPENAI_API_KEY environment variable not set")
+    print()
+    print("Please set your OpenRouter or OpenAI API key:")
+    print("  export OPENAI_API_KEY='your-api-key-here'")
+    print("  export OPENAI_API_BASE='https://openrouter.ai/api/v1'  # For OpenRouter")
+    print()
+    exit(1)
+
+api_base = os.getenv('OPENAI_API_BASE', 'https://api.openai.com/v1')
+lm = dspy.LM(
+    'openai/gpt-4o-mini',
+    api_base=api_base,
+    api_key=os.environ['OPENAI_API_KEY']
+)
+dspy.configure(lm=lm)
 
 
 class DrivingSimulator:
