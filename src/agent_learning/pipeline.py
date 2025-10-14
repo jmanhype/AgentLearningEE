@@ -14,12 +14,20 @@ from datetime import datetime
 from .world_model import train_world_model
 from .exploration import generate_exploratory_rollouts
 from .reflection import generate_reflection_data, validate_reflection_data
-from .policy import train_policy
+from .policy import train_policy, train_bridge_on_reflections
 from .utils import (
     load_jsonl,
     setup_logger,
     MetricsTracker,
 )
+
+# ACE Bridge integration (optional)
+try:
+    from ee_ace_bridge import config as ace_config
+    ACE_AVAILABLE = True
+except ImportError:
+    ACE_AVAILABLE = False
+    ace_config = None
 
 
 # ============================================================================
@@ -237,6 +245,44 @@ def run_complete_pipeline(
                     "value": validation_report,
                 },
             )
+
+        # ====================================================================
+        # Optional: Seed ACE Bridge Playbook with Reflection Data
+        # ====================================================================
+        if ACE_AVAILABLE and ace_config and ace_config.ACE_ENABLED:
+            logger.info(
+                "Seeding ACE playbook with reflection insights",
+                extra={"stage": "pipeline", "metric": "ace_seeding_start"},
+            )
+
+            # Load reflection data for ACE seeding
+            reflection_data = load_jsonl(reflection_path)
+
+            # Seed playbook with insights from reflections
+            insights_count = train_bridge_on_reflections(
+                reflections=reflection_data,
+                logger=logger
+            )
+
+            result["metrics"]["ace_bridge"] = {
+                "insights_seeded": insights_count,
+                "source_reflections": len(reflection_data)
+            }
+
+            logger.info(
+                f"ACE playbook seeded with {insights_count} insights from {len(reflection_data)} reflections",
+                extra={
+                    "stage": "pipeline",
+                    "metric": "ace_seeding_complete",
+                    "value": insights_count
+                },
+            )
+        else:
+            if ACE_AVAILABLE:
+                logger.debug(
+                    "ACE bridge available but disabled (ACE_ENABLED=False)",
+                    extra={"stage": "pipeline", "metric": "ace_skipped"}
+                )
 
         # ====================================================================
         # Stage 4: Train Policy

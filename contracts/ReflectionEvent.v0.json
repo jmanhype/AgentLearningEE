@@ -1,0 +1,62 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "ReflectionEvent",
+  "description": "Event schema for EE reflection data that will be mapped to ACE insights",
+  "type": "object",
+  "required": ["task", "state", "expert_action", "alternatives", "rationale", "timestamp"],
+  "properties": {
+    "task": {
+      "type": "string",
+      "description": "Name or identifier of the task domain"
+    },
+    "state": {
+      "type": "string",
+      "description": "Current environment state description"
+    },
+    "expert_action": {
+      "type": "string",
+      "description": "Action chosen by expert demonstrator"
+    },
+    "alternatives": {
+      "type": "array",
+      "description": "Alternative actions that were considered",
+      "items": {
+        "type": "object",
+        "required": ["action", "outcome"],
+        "properties": {
+          "action": {
+            "type": "string",
+            "description": "Alternative action that was considered"
+          },
+          "outcome": {
+            "type": "string",
+            "description": "Predicted or observed outcome of alternative action"
+          }
+        }
+      }
+    },
+    "rationale": {
+      "type": "string",
+      "description": "Structured EE-style reasoning explaining why expert action was chosen"
+    },
+    "state_fingerprint": {
+      "type": "string",
+      "description": "Optional hash or identifier for state deduplication"
+    },
+    "confidence": {
+      "type": "number",
+      "minimum": 0.0,
+      "maximum": 1.0,
+      "description": "Confidence score for the reflection (0.0-1.0)"
+    },
+    "timestamp": {
+      "type": "string",
+      "format": "date-time",
+      "description": "ISO 8601 timestamp when reflection was generated"
+    },
+    "source_ref": {
+      "type": "string",
+      "description": "Reference to source rollout or demonstration"
+    }
+  }
+}

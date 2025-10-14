@@ -3,6 +3,8 @@ Policy Module - Agent policy with structured self-reflection reasoning.
 
 Implements User Story 3: Train Policy with Self-Reflection Reasoning
 Generates decisions with 4-section EE-style reasoning comparing expert vs alternatives.
+
+Integrates with ACE Bridge for playbook-augmented inference when enabled.
 """
 
 from pathlib import Path
@@ -19,6 +21,102 @@ from .utils import (
     setup_logger,
     MetricsTracker,
 )
+
+# ACE Bridge integration (optional, controlled by ACE_ENABLED flag)
+try:
+    from ee_ace_bridge import (
+        InMemoryAceClient,
+        reflection_to_insight,
+        augment_state_with_playbook,
+        config as ace_config,
+    )
+    ACE_AVAILABLE = True
+except ImportError:
+    ACE_AVAILABLE = False
+    ace_config = None
+
+
+# ============================================================================
+# Global ACE Client Instance
+# ============================================================================
+
+_ace_client: Optional['InMemoryAceClient'] = None
+
+def get_ace_client():
+    """
+    Get or create global ACE client instance.
+
+    Returns:
+        InMemoryAceClient instance, or None if ACE not available
+    """
+    global _ace_client
+    if not ACE_AVAILABLE:
+        return None
+    if _ace_client is None:
+        _ace_client = InMemoryAceClient()
+    return _ace_client
+
+
+def train_bridge_on_reflections(
+    reflections: List[Dict],
+    logger: Optional[logging.Logger] = None
+) -> int:
+    """
+    Seed ACE bridge with insights from reflection data.
+
+    Called during training pipeline to populate the in-memory playbook
+    with rules extracted from EE reflections.
+
+    Args:
+        reflections: List of reflection dictionaries
+        logger: Optional logger instance
+
+    Returns:
+        Number of insights successfully ingested
+
+    Example:
+        >>> reflection_data = load_jsonl("artifacts/reflection_data.jsonl")
+        >>> count = train_bridge_on_reflections(reflection_data)
+        >>> print(f"Seeded playbook with {count} insights")
+    """
+    if not ACE_AVAILABLE:
+        if logger:
+            logger.info("ACE bridge not available, skipping playbook seeding")
+        return 0
+
+    if logger is None:
+        logger = setup_logger("policy")
+
+    ace = get_ace_client()
+    if ace is None:
+        return 0
+
+    ingested = 0
+    for reflection in reflections:
+        try:
+            # Map reflection to ACE insight
+            insight = reflection_to_insight(reflection)
+
+            # Ingest into playbook
+            ace.ingest_insight(insight)
+            ingested += 1
+
+        except Exception as e:
+            logger.warning(
+                f"Failed to ingest reflection as insight: {e}",
+                extra={"stage": "policy", "metric": "insight_ingest_error"}
+            )
+
+    logger.info(
+        f"Seeded ACE playbook with {ingested}/{len(reflections)} insights",
+        extra={
+            "stage": "policy",
+            "metric": "ace_playbook_seeded",
+            "value": ingested
+        }
+    )
+
+    return ingested
 
 
 # ============================================================================
@@ -421,8 +519,30 @@ def generate_decision(
         raise ValueError("State must be a non-empty string")
 
     try:
+        # Augment state with playbook if ACE enabled
+        augmented_state = state
+        if ACE_AVAILABLE and ace_config and ace_config.ACE_ENABLED:
+            ace = get_ace_client()
+            if ace is not None:
+                augmented_state = augment_state_with_playbook(
+                    state,
+                    ace,
+                    sections=ace_config.ACE_SECTIONS,
+                    token_budget=ace_config.ACE_TOKEN_BUDGET
+                )
+                if logger and augmented_state != state:
+                    logger.debug(
+                        "Augmented state with ACE playbook",
+                        extra={
+                            "stage": "policy",
+                            "metric": "playbook_injected",
+                            "original_length": len(state),
+                            "augmented_length": len(augmented_state)
+                        }
+                    )
+
         # Run policy
-        prediction = policy(state=state)
+        prediction = policy(state=augmented_state)
         reasoning = prediction.reasoning
         action = prediction.action
 
