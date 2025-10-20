@@ -6,10 +6,12 @@ import argparse
 import json
 import os
 from pathlib import Path
-from typing import Dict, Any
+from typing import Dict, Any, List
 
 from ace.utils.database import get_session
 from ace.repositories.playbook_repository import PlaybookRepository
+
+METRICS_DEFAULT = Path("live_loop_artifacts/metrics.json")
 
 
 def load_promotion_report(path: Path) -> Dict[str, Any]:
@@ -17,6 +19,63 @@ def load_promotion_report(path: Path) -> Dict[str, Any]:
         return {}
     with path.open("r", encoding="utf-8") as handle:
         return json.load(handle)
+
+
+def summarize_feedback(metrics: Dict[str, Any]) -> List[str]:
+    if not metrics:
+        return []
+
+    lines: List[str] = []
+
+    benchmark_history = metrics.get("ace_benchmark_feedback_history") or []
+    if benchmark_history:
+        last = benchmark_history[-1]
+        successes = last.get("tasks_succeeded", [])
+        failures = last.get("tasks_failed", [])
+        lines.append("## Benchmark Feedback\n")
+        lines.append(f"- Successes: {len(successes)}")
+        if successes:
+            lines.append("  - Tasks: " + ", ".join(successes[:10]))
+            if len(successes) > 10:
+                lines.append(f"  - (+{len(successes) - 10} more)")
+        lines.append(f"- Failures: {len(failures)}")
+        if failures:
+            lines.append("  - Tasks: " + ", ".join(failures[:10]))
+            if len(failures) > 10:
+                lines.append(f"  - (+{len(failures) - 10} more)")
+        lines.append("")
+
+    negative_history = metrics.get("ace_negative_feedback_history") or []
+    if negative_history:
+        last = negative_history[-1]
+        tasks = last.get("tasks", [])
+        lines.append("## Guardrail Penalties\n")
+        lines.append(f"- Penalized tasks: {len(tasks)}")
+        if tasks:
+            lines.append("  - Tasks: " + ", ".join(tasks[:10]))
+            if len(tasks) > 10:
+                lines.append(f"  - (+{len(tasks) - 10} more)")
+        lines.append("")
+
+    prod_history = metrics.get("ace_prod_promotion_history") or []
+    if prod_history:
+        last = prod_history[-1]
+        promoted = last.get("promoted", [])
+        demoted = last.get("demoted", [])
+        lines.append("## Prod Promotion Summary\n")
+        lines.append(f"- Promoted to prod: {len(promoted)}")
+        if promoted:
+            lines.append("  - Bullets: " + ", ".join(promoted[:10]))
+            if len(promoted) > 10:
+                lines.append(f"  - (+{len(promoted) - 10} more)")
+        lines.append(f"- Demoted from prod: {len(demoted)}")
+        if demoted:
+            lines.append("  - Bullets: " + ", ".join(demoted[:10]))
+            if len(demoted) > 10:
+                lines.append(f"  - (+{len(demoted) - 10} more)")
+        lines.append("")
+
+    return lines
 
 
 def format_bullet(bullet) -> str:
@@ -46,6 +105,12 @@ def main() -> None:
         default=Path("artifacts/replay/promotion_review.md"),
         help="Path to write markdown digest",
     )
+    parser.add_argument(
+        "--metrics",
+        type=Path,
+        default=METRICS_DEFAULT,
+        help="Path to live loop metrics JSON",
+    )
     args = parser.parse_args()
 
     report = load_promotion_report(args.promotion_report)
@@ -57,6 +122,14 @@ def main() -> None:
         domain_id = report.get("domain_id", "default")
         promoted_ids = report.get("promoted", [])
         quarantined_ids = report.get("quarantined", [])
+
+    metrics_data: Dict[str, Any] = {}
+    if args.metrics.exists():
+        with args.metrics.open("r", encoding="utf-8") as handle:
+            try:
+                metrics_data = json.load(handle)
+            except json.JSONDecodeError:
+                metrics_data = {}
 
     lines = [f"# ACE Promotion Digest ({domain_id})\n"]
 
@@ -83,6 +156,10 @@ def main() -> None:
                     else:
                         lines.append(f"- `{bullet_id}` (details unavailable)")
                 lines.append("")
+
+    feedback = summarize_feedback(metrics_data)
+    if feedback:
+        lines.extend(feedback)
 
     if len(lines) == 1:
         lines.append("No promotions or quarantines recorded in this run.\n")
