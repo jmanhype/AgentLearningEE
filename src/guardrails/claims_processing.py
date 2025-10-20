@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-import json
-from pathlib import Path
 from typing import Dict, Optional
 
 from guardrails import register_domain
@@ -40,31 +38,60 @@ class ClaimsDecisionGuardrail:
         return normalized
 
 
+CLAIMS_DATA = [
+    {
+        "task_id": "claims-case-001",
+        "ground_truth": "approve",
+        "guardrail": {
+            "instructions": "Return 'approve' or 'deny'. Approve when driver not at fault and estimate below $2000.",
+        },
+    },
+    {
+        "task_id": "claims-case-002",
+        "ground_truth": "deny",
+        "guardrail": {
+            "instructions": "Return 'approve' or 'deny'. Deny basic policies when estimate exceeds $3000.",
+        },
+    },
+    {
+        "task_id": "claims-case-003",
+        "ground_truth": "approve",
+        "guardrail": {
+            "instructions": "Return 'approve' or 'deny'. Approve minor damage under $1000.",
+        },
+    },
+    {
+        "task_id": "claims-case-004",
+        "ground_truth": "deny",
+        "guardrail": {
+            "instructions": "Return 'approve' or 'deny'. Deny when driver at fault due to policy violation.",
+        },
+    },
+    {
+        "task_id": "claims-case-005",
+        "ground_truth": "approve",
+        "guardrail": {
+            "instructions": "Return 'approve' or 'deny'. Approve theft claims for premium tier regardless of amount.",
+        },
+    },
+]
+
+
 def _load_guardrails() -> Dict[str, ClaimsDecisionGuardrail]:
     domain_guardrails: Dict[str, ClaimsDecisionGuardrail] = {}
-    root = Path(__file__).resolve().parents[2]
-    dataset_path = root / "data" / "claims_samples" / "claims_20.jsonl"
-    if not dataset_path.exists():
-        return domain_guardrails
+    for entry in CLAIMS_DATA:
+        guardrail_meta = entry.get("guardrail", {})
+        instructions = guardrail_meta.get(
+            "instructions",
+            "Return either 'approve' or 'deny'.",
+        )
+        expected = entry.get("ground_truth", "deny")
 
-    with dataset_path.open("r", encoding="utf-8") as handle:
-        for line in handle:
-            if not line.strip():
-                continue
-            record = json.loads(line)
-            task_id = record["task_id"]
-            guardrail_meta = record.get("guardrail", {})
-            expected = record.get("ground_truth", guardrail_meta.get("value", "deny"))
-            instructions = guardrail_meta.get(
-                "instructions",
-                "Return either 'approve' or 'deny'.",
-            )
-
-            domain_guardrails[task_id] = ClaimsDecisionGuardrail(
-                task_id=task_id,
-                expected=expected,
-                instructions=instructions,
-            )
+        domain_guardrails[entry["task_id"]] = ClaimsDecisionGuardrail(
+            task_id=entry["task_id"],
+            expected=expected,
+            instructions=instructions,
+        )
 
     return domain_guardrails
 
