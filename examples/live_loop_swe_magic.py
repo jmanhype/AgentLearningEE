@@ -1,9 +1,11 @@
-"""Utility to run guardrail-driven live loops for SWE-bench and MagicBrush.
+"""Utility to run live loops for SWE-bench and MagicBrush.
 
-This script wraps the small JSONL samples under ``data/swe_bench_samples`` and
-``data/magicbrush_samples`` with simple environments so we can exercise the
-``LiveExplorationLoop`` without requiring an LLM policy. Actions are replayed
-from the dataset and validated by the deterministic guardrails we added.
+This script wires the JSONL fixtures under ``data/swe_bench_samples`` and
+``data/magicbrush_samples`` into the :class:`LiveExplorationLoop`. By default it
+loads the trained policy from ``artifacts/policy.pkl`` so the agent generates
+fresh actions and reflections. Pass ``--guardrail-replay`` only when you need a
+deterministic, offline smoke test that simply replays the recorded dataset
+actions (no learning occurs in that mode).
 
 Usage (SWE-bench demo)::
 
@@ -14,8 +16,9 @@ Usage (MagicBrush demo)::
     python examples/live_loop_swe_magic.py --domain magicbrush --episodes 5
 
 Set ``--ace`` if you have ACE configured and want to log corrections into the
-playbook. The script defaults to guardrail-driven actions so it runs fully
-offline (no API keys required).
+playbook. When running with the real policy, ensure an LM backend is available
+via ``OPENROUTER_API_KEY``, ``OPENAI_API_KEY`` or ``ANTHROPIC_API_KEY`` (or a
+pre-loaded ``dspy`` configuration).
 """
 
 from __future__ import annotations
@@ -34,9 +37,9 @@ import os
 from agent_learning.live_loop import LiveExplorationLoop, LiveLoopConfig
 
 
-def _configure_lm_from_env() -> None:
+def _configure_lm_from_env() -> bool:
     if dspy.settings.lm is not None:
-        return
+        return True
 
     key = (
         os.getenv("OPENROUTER_API_KEY")
@@ -59,7 +62,7 @@ def _configure_lm_from_env() -> None:
             )
 
     if not key:
-        return
+        return False
 
     if os.getenv("OPENROUTER_API_KEY"):
         dspy.configure(
@@ -84,6 +87,8 @@ def _configure_lm_from_env() -> None:
                 api_key=os.environ["ANTHROPIC_API_KEY"],
             )
         )
+
+    return dspy.settings.lm is not None
 
 
 def _load_records(path: Path) -> Dict[str, dict]:
@@ -126,6 +131,11 @@ class SweBenchEnvironment:
 
         record = self.current
         guardrail = get_guardrail(record["task_id"], domain="swe-bench")
+        if guardrail is None:
+            raise RuntimeError(
+                f"No guardrail registered for task {record['task_id']} in domain swe-bench. "
+                "Run `python scripts/scaffold_domain.py swe-bench` or register the guardrail before using the demo."
+            )
         if hasattr(guardrail, "reset"):
             guardrail.reset()
         guardrail.validate(action, record.get("ground_truth", "pass"))
@@ -167,13 +177,19 @@ class MagicBrushEnvironment:
 
         record = self.current
         guardrail = get_guardrail(record["task_id"], domain="magicbrush")
+        if guardrail is None:
+            raise RuntimeError(
+                f"No guardrail registered for task {record['task_id']} in domain magicbrush. "
+                "Run `python scripts/scaffold_domain.py magicbrush` or register the guardrail before using the demo."
+            )
         if hasattr(guardrail, "reset"):
             guardrail.reset()
         guardrail.validate(action, record.get("ground_truth", "pass"))
+        metrics = getattr(guardrail, "metrics", record["next_state"].get("metrics", {}))
         info = {
             "task_id": record["task_id"],
             "canonical": guardrail.canonical_answer(),
-            "metrics": record["next_state"].get("metrics", {}),
+            "metrics": metrics,
         }
         self.index += 1
         return json.dumps(info, indent=2), True
@@ -198,8 +214,14 @@ class GuardrailPolicy:
     __call__ = forward
 
 
-def run_guardrail_loop(domain: str, dataset_path: Path, episodes: int, ace: bool) -> None:
-    _configure_lm_from_env()
+def run_guardrail_loop(
+    domain: str,
+    dataset_path: Path,
+    episodes: int,
+    ace: bool,
+    guardrail_replay: bool,
+) -> None:
+    lm_available = _configure_lm_from_env()
     if domain == "swe-bench":
         env = SweBenchEnvironment(dataset_path)
     elif domain == "magicbrush":
@@ -218,18 +240,29 @@ def run_guardrail_loop(domain: str, dataset_path: Path, episodes: int, ace: bool
 
     loop = LiveExplorationLoop(env, policy_path="artifacts/policy.pkl", config=config)
 
-    # Replace policy with guardrail-driven stub.
-    loop._policy_module = GuardrailPolicy(lambda: env.current["task_id"], env.records)
+    if guardrail_replay:
+        print("⚠️  Using guardrail replay fallback – no new actions will be generated.")
+        loop._policy_module = GuardrailPolicy(lambda: env.current["task_id"], env.records)
+    elif not lm_available:
+        raise RuntimeError(
+            "No LM configured for DSPy. Provide OPENROUTER_API_KEY, OPENAI_API_KEY, or ANTHROPIC_API_KEY"
+            " (or pre-configure dspy.configure) to run the live loop with the trained policy."
+        )
 
     metrics = loop.run()
     print(f"Loop finished for domain={domain}: episodes={metrics.total_episodes}, guardrail_passes={metrics.guardrail_passes}")
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="Run guardrail-driven live loop demos")
+    parser = argparse.ArgumentParser(description="Run continuous learning live loop demos")
     parser.add_argument("--domain", choices=["swe-bench", "magicbrush"], required=True)
     parser.add_argument("--episodes", type=int, default=10)
     parser.add_argument("--ace", action="store_true", help="Enable ACE integration if configured")
+    parser.add_argument(
+        "--guardrail-replay",
+        action="store_true",
+        help="Replay dataset actions instead of using the trained policy (for offline smoke tests)",
+    )
     args = parser.parse_args()
 
     dataset = {
@@ -237,7 +270,18 @@ def main() -> None:
         "magicbrush": Path("data/magicbrush_samples/magicbrush_50.jsonl"),
     }[args.domain]
 
-    run_guardrail_loop(args.domain, dataset, args.episodes, ace=args.ace)
+    if not dataset.exists():
+        raise FileNotFoundError(
+            f"Dataset not found at {dataset}. Generate samples under data/{args.domain}_samples/ before running the live loop demo."
+        )
+
+    run_guardrail_loop(
+        args.domain,
+        dataset,
+        args.episodes,
+        ace=args.ace,
+        guardrail_replay=args.guardrail_replay,
+    )
 
 
 if __name__ == "__main__":

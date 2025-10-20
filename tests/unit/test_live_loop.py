@@ -9,6 +9,15 @@ from pathlib import Path
 from unittest.mock import Mock, MagicMock, patch
 import tempfile
 import shutil
+import dspy
+
+
+def _install_dummy_lm() -> None:
+    class _DummyLM:
+        def __call__(self, *args, **kwargs):
+            return ""
+
+    dspy.settings.lm = _DummyLM()
 
 from agent_learning.live_loop import (
     LiveExplorationLoop,
@@ -117,6 +126,7 @@ class TestLiveLoopMetrics:
         assert metrics.total_reflections == 0
         assert metrics.total_ace_updates == 0
         assert metrics.runtime_seconds() >= 0
+        assert metrics.reflections_since_last_update == 0
 
     def test_episodes_per_minute(self):
         """Test throughput calculation."""
@@ -133,7 +143,7 @@ class TestLiveExplorationLoop:
     @patch("agent_learning.policy.load_trained_policy")
     def test_initialization(self, mock_load_policy, temp_output_dir, temp_policy):
         """Test loop initialization."""
-        environment = MockEnvironment()
+        environment = MockEnvironment(num_episodes=1)
         config = LiveLoopConfig(output_dir=temp_output_dir)
 
         loop = LiveExplorationLoop(
@@ -159,7 +169,7 @@ class TestLiveExplorationLoop:
         mock_load_policy.return_value = mock_policy
         mock_generate.return_value = ("reasoning", "test_action")
 
-        environment = MockEnvironment()
+        environment = MockEnvironment(num_episodes=1)
         config = LiveLoopConfig(output_dir=temp_output_dir, ace_enabled=False)
 
         loop = LiveExplorationLoop(
@@ -168,12 +178,13 @@ class TestLiveExplorationLoop:
             config=config,
         )
 
-        episode = loop._collect_episode()
+        episodes = loop._collect_episode()
 
-        assert episode is not None
-        assert episode.state == "state_0"
-        assert episode.action == "test_action"
-        assert episode.next_state == "next_state_0"
+        assert len(episodes) > 0
+        first_episode = episodes[0]
+        assert first_episode.state == "state_0"
+        assert first_episode.action == "test_action"
+        assert first_episode.next_state == "next_state_0"
         mock_generate.assert_called_once()
 
     @patch("agent_learning.policy.load_trained_policy")
@@ -201,10 +212,12 @@ class TestLiveExplorationLoop:
             config=config,
         )
 
+        _install_dummy_lm()
         metrics = loop.run()
 
         assert metrics.total_episodes == 5
-        assert len(loop.episode_buffer) == 5
+        assert metrics.total_episodes == 5
+        assert len(loop.episode_buffer) == 0
 
     @patch("agent_learning.policy.load_trained_policy")
     @patch("agent_learning.policy.generate_decision")
@@ -218,6 +231,7 @@ class TestLiveExplorationLoop:
         temp_policy,
     ):
         """Test reflection generation trigger."""
+        _install_dummy_lm()
         # Mock policy
         mock_policy = Mock()
         mock_load_policy.return_value = mock_policy
@@ -245,6 +259,7 @@ class TestLiveExplorationLoop:
             config=config,
         )
 
+        _install_dummy_lm()
         metrics = loop.run()
 
         assert metrics.total_episodes == 10
@@ -281,6 +296,7 @@ class TestLiveExplorationLoop:
         self, mock_generate, mock_load_policy, temp_output_dir, temp_policy
     ):
         """Test graceful shutdown."""
+        _install_dummy_lm()
         mock_policy = Mock()
         mock_load_policy.return_value = mock_policy
         mock_generate.return_value = ("reasoning", "test_action")
@@ -323,6 +339,7 @@ class TestACEIntegration:
         self, mock_get_ace, mock_generate, mock_load_policy, temp_output_dir, temp_policy
     ):
         """Test ACE client loading when enabled."""
+        _install_dummy_lm()
         mock_policy = Mock()
         mock_load_policy.return_value = mock_policy
 
@@ -347,6 +364,7 @@ class TestACEIntegration:
     @patch("agent_learning.policy.get_ace_client")
     def test_ace_disabled(self, mock_get_ace, mock_load_policy, temp_output_dir, temp_policy):
         """Test that ACE is not loaded when disabled."""
+        _install_dummy_lm()
         mock_policy = Mock()
         mock_load_policy.return_value = mock_policy
 

@@ -126,6 +126,18 @@ See `examples/live_loop_demo.py` for complete working example with:
 - Playbook rendering
 - Artifact persistence
 
+### Prerequisites
+
+- Train and export a policy to `artifacts/policy.pkl` via `python -m agent_learning.pipeline` before running `examples/live_loop_demo.py` or `examples/live_loop_swe_magic.py`.
+- Generate per-domain JSONL samples under `data/<domain>_samples/` using `scripts/build_demo_datasets.py` for the guardrail demos.
+- Register guardrails with `python scripts/scaffold_domain.py <domain>` so `guardrails/<domain>.py` exposes `get_guardrail` entries for every dataset `task_id`.
+- Provide an LM API key (`OPENAI_API_KEY`, `OPENROUTER_API_KEY`, or `ANTHROPIC_API_KEY`) or populate a `.env` file so DSPy can initialize a language model. Without an LM the live loop now fails fast instead of replaying cached actions.
+- Expect per-run artifacts at `live_loop_artifacts/episodes_<timestamp>.jsonl` and `live_loop_artifacts/reflections_<timestamp>.jsonl`.
+
+### Smoke-test fallback
+
+Use `python examples/live_loop_swe_magic.py --guardrail-replay ...` only for offline audits when no LLM credentials are available. This mode simply replays the dataset actions, so guardrail metrics update but no new policy behavior or reflections are generated.
+
 ## Benefits
 
 1. **Continuous Learning**: Agent improves from own experiences
@@ -134,6 +146,15 @@ See `examples/live_loop_demo.py` for complete working example with:
 4. **Graceful Degradation**: Works with/without ACE
 5. **Observable**: Rich metrics and health checks
 6. **Resumable**: Persists episodes and reflections
+
+## Continuous Operations Playbook
+
+- **Onboard datasets**: Use `scripts/scaffold_domain.py <domain>` to generate guardrail stubs, then drop curated JSONL into `data/<domain>_samples/` (see SWE-bench & MagicBrush examples).
+- **Deterministic guardrails**: Implement calculcators under `src/guardrails/<domain>.py` that recompute metrics (patch application, SSIM/MSE, linting) and expose `canonical_answer()` for auto-correction.
+- **Nightly loops**: Schedule `PYTHONPATH=src ACE_ENABLED=1 ... python examples/live_loop_swe_magic.py --domain <domain> --episodes 50 --ace` via cron/GitHub Actions so ACE harvests fresh reflections every day.
+- **Benchmark drift**: After each loop, run `python scripts/run_benchmark.py data/<domain>/<file>.jsonl --domain <domain> --offline` to compare guardrails-only vs. ACE-assisted runs.
+- **Experience replay**: Feed `live_loop_artifacts/episodes_*.jsonl` back into policy training, re-run benchmarks, and record deltas in `results/`.
+- **Promotion cadence**: Review ACE shadow bullets, promote via `ace-playbook/scripts/ace_review.py`, and document stage changes alongside guardrail metrics for auditability.
 
 ## Next Steps
 

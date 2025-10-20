@@ -1,0 +1,75 @@
+name: nightly-live-loop
+
+on:
+  schedule:
+    - cron: "0 9 * * *" # 09:00 UTC nightly
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  run-live-loop:
+    name: Run live loop for ${{ matrix.domain }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        domain: [swe-bench, magicbrush]
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install .[dev]
+          python -m pip install git+https://github.com/jmanhype/ace-playbook.git
+
+      - name: Configure ACE flag
+        env:
+          ACE_TOKEN: ${{ secrets.ACE_TOKEN }}
+        run: |
+          echo "ACE_ENABLED=1" >> "$GITHUB_ENV"
+          echo "ACE_ARGS=--ace" >> "$GITHUB_ENV"
+          if [ -z "$ACE_TOKEN" ]; then
+            echo "Running with local ACE stub (no ACE_TOKEN secret set)."
+          fi
+
+      - name: Run live loop
+        env:
+          ACE_ENABLED: ${{ env.ACE_ENABLED }}
+          ACE_DOMAIN_ID: ${{ matrix.domain }}
+          ACE_TARGET_STAGE: shadow
+          ACE_TOKEN: ${{ secrets.ACE_TOKEN }}
+          ACE_ENDPOINT: ${{ secrets.ACE_ENDPOINT }}
+          DATABASE_URL: sqlite:///ace_playbook.db
+          PYTHONPATH: src
+        run: |
+          python examples/live_loop_swe_magic.py --domain "${{ matrix.domain }}" --episodes 50 $ACE_ARGS
+
+      - name: Summarize live loop artifacts
+        if: always()
+        run: |
+          python scripts/summarize_live_loop.py live_loop_artifacts > live_loop_summary.json
+          echo '### Live loop summary' >> "$GITHUB_STEP_SUMMARY"
+          echo '```json' >> "$GITHUB_STEP_SUMMARY"
+          cat live_loop_summary.json >> "$GITHUB_STEP_SUMMARY"
+          echo '```' >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload live loop artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: live-loop-${{ matrix.domain }}-${{ github.run_id }}
+          path: |
+            live_loop_artifacts/
+            logs/
+            live_loop_summary.json
+          if-no-files-found: ignore
