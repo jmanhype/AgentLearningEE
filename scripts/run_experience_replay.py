@@ -6,8 +6,9 @@ import argparse
 import json
 import os
 import shutil
+import time
 from pathlib import Path
-from typing import Dict, List
+from typing import Dict, List, Optional
 
 import dspy
 
@@ -17,6 +18,13 @@ from agent_learning.policy import train_policy
 from ace.utils.database import get_session
 from ace.ops.stage_manager import StageManager
 from ace.repositories.playbook_repository import PlaybookRepository
+
+try:
+    from ee_ace_bridge import reflection_to_insight
+    from ee_ace_bridge.ace_client import InProcessAceClient
+    ACE_INGEST_AVAILABLE = True
+except ImportError:  # pragma: no cover
+    ACE_INGEST_AVAILABLE = False
 
 
 def configure_lm_from_env() -> bool:
@@ -174,8 +182,53 @@ def main() -> None:
         extra={"policy_path": str(args.policy_output)},
     )
 
-    # === ACE promotion/quarantine sweep ===
     domain_id = os.getenv("ACE_DOMAIN_ID", "default")
+    ingestion_result: Optional[Dict[str, int]] = None
+
+    if ACE_INGEST_AVAILABLE:
+        try:
+            client = InProcessAceClient(domain_id=domain_id)
+            insights = [reflection_to_insight(r) for r in reflections]
+            if insights:
+                ingestion_result = client.ingest_insights_batch(insights)
+                logger.info(
+                    "ACE ingestion from replay",
+                    extra={
+                        "domain_id": domain_id,
+                        "added": ingestion_result.get("added", 0),
+                        "incremented": ingestion_result.get("incremented", 0),
+                        "duplicates": ingestion_result.get("duplicates", 0),
+                    },
+                )
+        except Exception as exc:  # pragma: no cover - defensive logging
+            logger.warning(
+                "ace_ingestion_failed",
+                extra={"domain_id": domain_id, "error": str(exc)},
+            )
+
+    metrics_path = Path("live_loop_artifacts/metrics.json")
+    if ingestion_result and metrics_path.exists():
+        with metrics_path.open("r", encoding="utf-8") as handle:
+            metrics = json.load(handle)
+
+        metrics.setdefault("ace_update_history", []).append(
+            {
+                "source": "experience_replay",
+                "timestamp": time.time(),
+                "added": ingestion_result.get("added", 0),
+                "incremented": ingestion_result.get("incremented", 0),
+                "duplicates": ingestion_result.get("duplicates", 0),
+                "total_insights": ingestion_result.get("total_insights", len(reflections)),
+            }
+        )
+        metrics["total_ace_updates"] = metrics.get("total_ace_updates", 0) + 1
+        metrics["last_ace_update_time"] = time.time()
+        metrics["domain"] = domain_id
+
+        with metrics_path.open("w", encoding="utf-8") as handle:
+            json.dump(metrics, handle, indent=2, sort_keys=True)
+
+    # === ACE promotion/quarantine sweep ===
     promotion_report = {
         "domain_id": domain_id,
         "promoted": [],
