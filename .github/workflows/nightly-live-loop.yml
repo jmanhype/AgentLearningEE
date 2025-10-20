@@ -99,6 +99,13 @@ jobs:
             claims-processing)
               suite="data/claims_samples/claims_20.jsonl"
               ;;
+            finance-qa)
+              suite="data/finance_samples/finance_20.jsonl"
+              ;;
+            *)
+              echo "Unsupported domain ${{ matrix.domain }} for benchmark suite" >&2
+              exit 1
+              ;;
           esac
           python scripts/run_benchmark.py "$suite" --domain "${{ matrix.domain }}" --output "results/${{ matrix.domain }}_${{ github.run_id }}.json" --max-tasks 10 --offline
 
@@ -152,13 +159,48 @@ jobs:
           python scripts/validate_live_loop.py --metrics live_loop_artifacts/metrics.json
 
       - name: Post review digest comment
-        if: always() && vars.REVIEW_ISSUE_NUMBER != ''
+        if: >-
+          always() && (
+            vars.REVIEW_ISSUE_NUMBER != '' ||
+            vars.REVIEW_ISSUE_NUMBER_SWE != '' ||
+            vars.REVIEW_ISSUE_NUMBER_MAGICBRUSH != '' ||
+            vars.REVIEW_ISSUE_NUMBER_CLAIMS != '' ||
+            vars.REVIEW_ISSUE_NUMBER_FINANCE != ''
+          )
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REVIEW_ISSUE_NUMBER_DEFAULT: ${{ vars.REVIEW_ISSUE_NUMBER }}
+          REVIEW_ISSUE_NUMBER_SWE: ${{ vars.REVIEW_ISSUE_NUMBER_SWE }}
+          REVIEW_ISSUE_NUMBER_MAGICBRUSH: ${{ vars.REVIEW_ISSUE_NUMBER_MAGICBRUSH }}
+          REVIEW_ISSUE_NUMBER_CLAIMS: ${{ vars.REVIEW_ISSUE_NUMBER_CLAIMS }}
+          REVIEW_ISSUE_NUMBER_FINANCE: ${{ vars.REVIEW_ISSUE_NUMBER_FINANCE }}
         run: |
+          case "${{ matrix.domain }}" in
+            swe-bench)
+              issue_number="$REVIEW_ISSUE_NUMBER_SWE"
+              ;;
+            magicbrush)
+              issue_number="$REVIEW_ISSUE_NUMBER_MAGICBRUSH"
+              ;;
+            claims-processing)
+              issue_number="$REVIEW_ISSUE_NUMBER_CLAIMS"
+              ;;
+            finance-qa)
+              issue_number="$REVIEW_ISSUE_NUMBER_FINANCE"
+              ;;
+            *)
+              issue_number="$REVIEW_ISSUE_NUMBER_DEFAULT"
+              ;;
+          esac
+
+          if [ -z "$issue_number" ]; then
+            echo "No review issue configured for ${{ matrix.domain }}; skipping comment"
+            exit 0
+          fi
+
           if [ -f artifacts/replay/promotion_review.md ]; then
             body=$(printf "Nightly ACE review - domain %s (run %s)\n\n\`\`\`markdown\n%s\n\`\`\`\n[Artifacts](%s/%s/actions/runs/%s)" "${{ matrix.domain }}" "${{ github.run_id }}" "$(head -n 40 artifacts/replay/promotion_review.md)" "${{ github.server_url }}" "${{ github.repository }}" "${{ github.run_id }}")
-            gh issue comment "${{ vars.REVIEW_ISSUE_NUMBER }}" --body "$body"
+            gh issue comment "$issue_number" --body "$body"
           else
             echo "No promotion review for ${{ matrix.domain }}; skipping comment"
           fi
