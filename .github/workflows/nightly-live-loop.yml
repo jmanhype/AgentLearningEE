@@ -85,6 +85,19 @@ jobs:
         run: |
           python scripts/run_experience_replay.py --reflections-dir live_loop_artifacts --output-dir artifacts/replay --policy-output artifacts/policy_replay.pkl
 
+      - name: Run benchmark drift check
+        run: |
+          mkdir -p results
+          case "${{ matrix.domain }}" in
+            swe-bench)
+              suite="data/swe_bench_samples/swe_bench_50.jsonl"
+              ;;
+            magicbrush)
+              suite="data/magicbrush_samples/magicbrush_50.jsonl"
+              ;;
+          esac
+          python scripts/run_benchmark.py "$suite" --domain "${{ matrix.domain }}" --output "results/${{ matrix.domain }}_${{ github.run_id }}.json" --max-tasks 10
+
       - name: Summarize live loop artifacts
         if: always()
         run: |
@@ -93,6 +106,12 @@ jobs:
           echo '```json' >> "$GITHUB_STEP_SUMMARY"
           cat live_loop_summary.json >> "$GITHUB_STEP_SUMMARY"
           echo '```' >> "$GITHUB_STEP_SUMMARY"
+          if [ -f live_loop_artifacts/metrics.json ]; then
+            echo '#### ACE Metrics' >> "$GITHUB_STEP_SUMMARY"
+            echo '```json' >> "$GITHUB_STEP_SUMMARY"
+            jq '{total_ace_updates, ace_update_history}' live_loop_artifacts/metrics.json >> "$GITHUB_STEP_SUMMARY"
+            echo '```' >> "$GITHUB_STEP_SUMMARY"
+          fi
 
       - name: Validate ACE ingestion
         if: always() && env.ACE_ENABLED == '1'
@@ -112,4 +131,5 @@ jobs:
             artifacts/replay/
             artifacts/policy_replay.pkl
             artifacts/policy_prev.pkl
+            results/
           if-no-files-found: ignore

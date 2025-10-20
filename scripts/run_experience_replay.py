@@ -14,6 +14,10 @@ import dspy
 from agent_learning.utils import load_jsonl, save_jsonl, setup_logger
 from agent_learning.policy import train_policy
 
+from ace.utils.database import get_session
+from ace.ops.stage_manager import StageManager
+from ace.repositories.playbook_repository import PlaybookRepository
+
 
 def configure_lm_from_env() -> bool:
     if dspy.settings.lm is not None:
@@ -169,6 +173,42 @@ def main() -> None:
         "Promoted replay-trained policy to artifacts/policy.pkl",
         extra={"policy_path": str(args.policy_output)},
     )
+
+    # === ACE promotion/quarantine sweep ===
+    domain_id = os.getenv("ACE_DOMAIN_ID", "default")
+    promotion_report = {
+        "domain_id": domain_id,
+        "promoted": [],
+        "quarantined": [],
+        "no_action": [],
+    }
+
+    with get_session() as session:
+        stage_manager = StageManager(session)
+        repo = PlaybookRepository(session)
+        bullets = repo.get_by_domain(domain_id)
+        if not bullets:
+            logger.info(
+                "No playbook bullets found for promotion sweep",
+                extra={"domain_id": domain_id},
+            )
+        else:
+            results = stage_manager.check_all_promotions(domain_id)
+            promotion_report.update(results)
+            logger.info(
+                "ACE promotion sweep complete",
+                extra={
+                    "domain_id": domain_id,
+                    "promoted": len(results["promoted"]),
+                    "quarantined": len(results["quarantined"]),
+                    "no_action": len(results["no_action"]),
+                },
+            )
+
+    promotion_path = args.output_dir / "promotion_report.json"
+    promotion_path.parent.mkdir(parents=True, exist_ok=True)
+    with promotion_path.open("w", encoding="utf-8") as handle:
+        json.dump(promotion_report, handle, indent=2, sort_keys=True)
 
 
 if __name__ == "__main__":
