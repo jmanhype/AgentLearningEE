@@ -58,7 +58,7 @@ jobs:
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
           OPENAI_API_BASE: ${{ secrets.OPENAI_API_BASE }}
         run: |
-          python examples/live_loop_swe_magic.py --domain "${{ matrix.domain }}" --episodes 50 $ACE_ARGS
+          python examples/live_loop_swe_magic.py --domain "${{ matrix.domain }}" --episodes 10 $ACE_ARGS
 
       - name: Summarize live loop artifacts
         if: always()
