@@ -18,6 +18,7 @@ from agent_learning.policy import train_policy
 from ace.utils.database import get_session
 from ace.ops.stage_manager import StageManager
 from ace.repositories.playbook_repository import PlaybookRepository
+from ace.models.playbook import PlaybookStage
 
 try:
     from ee_ace_bridge import reflection_to_insight
@@ -125,16 +126,20 @@ def bootstrap_new_bullets(
     min_helpful: int,
     harmful_increment: int = 0,
 ) -> List[str]:
-    if not bullet_ids:
-        return []
-
     updated_ids: List[str] = []
+
     with get_session() as session:
         repo = PlaybookRepository(session)
 
-        for bullet_id in bullet_ids:
-            bullet = repo.get_by_id(bullet_id, domain_id)
+        if bullet_ids:
+            candidates = [repo.get_by_id(bullet_id, domain_id) for bullet_id in bullet_ids]
+        else:
+            candidates = repo.get_by_domain(domain_id)
+
+        for bullet in candidates:
             if bullet is None:
+                continue
+            if bullet.stage != PlaybookStage.SHADOW:
                 continue
 
             new_helpful = max(bullet.helpful_count, min_helpful)
@@ -146,9 +151,10 @@ def bootstrap_new_bullets(
             bullet.helpful_count = new_helpful
             bullet.harmful_count = new_harmful
             repo.update(bullet)
-            updated_ids.append(bullet_id)
+            updated_ids.append(bullet.id)
 
-        session.commit()
+        if updated_ids:
+            session.commit()
 
     return updated_ids
 
