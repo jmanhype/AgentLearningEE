@@ -19,12 +19,12 @@ Architecture:
 from __future__ import annotations
 
 import time
-from dataclasses import dataclass, field
+import json
+from dataclasses import dataclass, field, asdict
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Protocol, Tuple
 from collections import deque
-import json
 import logging
 
 import dspy
@@ -113,6 +113,7 @@ class LiveLoopMetrics:
     last_reflection_time: Optional[float] = None
     last_ace_update_time: Optional[float] = None
     reflections_since_last_update: int = 0
+    ace_update_history: List[Dict[str, Any]] = field(default_factory=list)
 
     def runtime_seconds(self) -> float:
         """Get total runtime in seconds."""
@@ -189,6 +190,7 @@ class LiveExplorationLoop:
         self._policy_module: Optional[PolicyModule] = None
         self._ace_client: Optional[Any] = None
         self._pending_reflections: List[Dict[str, Any]] = []
+        self._metrics_path = self.config.output_dir / "metrics.json"
 
         # Control flags
         self._running = False
@@ -621,6 +623,16 @@ class LiveExplorationLoop:
 
             self.metrics.total_ace_updates += 1
             self.metrics.last_ace_update_time = time.time()
+            if isinstance(result, dict):
+                self.metrics.ace_update_history.append(
+                    {
+                        "timestamp": self.metrics.last_ace_update_time,
+                        "added": result.get("added", 0),
+                        "incremented": result.get("incremented", 0),
+                        "duplicates": result.get("duplicates", 0),
+                        "total_insights": result.get("total_insights", len(reflections)),
+                    }
+                )
 
             self.logger.info(
                 f"ACE playbook updated - added: {result['added']}, "
@@ -765,6 +777,7 @@ class LiveExplorationLoop:
             # Final health check
             final_health = self._health_check()
             self.logger.info(f"Live loop stopped - status: {final_health['status']}")
+            self._write_metrics()
 
         return self.metrics
 
@@ -772,3 +785,31 @@ class LiveExplorationLoop:
         """Request graceful shutdown of loop."""
         self.logger.info("Stop requested")
         self._should_stop = True
+
+    def _write_metrics(self) -> None:
+        """Persist metrics to output directory."""
+
+        metrics_dict = asdict(self.metrics)
+        metrics_dict.update(
+            {
+                "timestamp": time.time(),
+                "output_dir": str(self.config.output_dir),
+            }
+        )
+
+        try:
+            with open(self._metrics_path, "w", encoding="utf-8") as handle:
+                json.dump(metrics_dict, handle, indent=2, sort_keys=True)
+            self.logger.info(
+                "metrics_written",
+                extra={
+                    "metrics_path": str(self._metrics_path),
+                    "total_reflections": self.metrics.total_reflections,
+                    "total_ace_updates": self.metrics.total_ace_updates,
+                },
+            )
+        except Exception as exc:
+            self.logger.error(
+                "metrics_write_failed",
+                extra={"error": str(exc), "metrics_path": str(self._metrics_path)},
+            )

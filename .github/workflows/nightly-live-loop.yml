@@ -21,6 +21,24 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
+      - name: Restore ACE curator cache
+        uses: actions/cache@v4
+        with:
+          path: |
+            ace_playbook.db
+            faiss_indices
+          key: ace-${{ matrix.domain }}-${{ github.run_id }}
+          restore-keys: |
+            ace-${{ matrix.domain }}-
+
+      - name: Restore replay buffer cache
+        uses: actions/cache@v4
+        with:
+          path: data/replay_buffer.jsonl
+          key: replay-${{ matrix.domain }}-${{ github.run_id }}
+          restore-keys: |
+            replay-${{ matrix.domain }}-
+
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
@@ -59,6 +77,14 @@ jobs:
         run: |
           python examples/live_loop_swe_magic.py --domain "${{ matrix.domain }}" --episodes 10 $ACE_ARGS
 
+      - name: Update replay buffer
+        run: |
+          python scripts/update_replay_buffer.py --episodes-dir live_loop_artifacts --output data/replay_buffer.jsonl
+
+      - name: Run experience replay training
+        run: |
+          python scripts/run_experience_replay.py --reflections-dir live_loop_artifacts --output-dir artifacts/replay --policy-output artifacts/policy_replay.pkl
+
       - name: Summarize live loop artifacts
         if: always()
         run: |
@@ -67,6 +93,11 @@ jobs:
           echo '```json' >> "$GITHUB_STEP_SUMMARY"
           cat live_loop_summary.json >> "$GITHUB_STEP_SUMMARY"
           echo '```' >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Validate ACE ingestion
+        if: always() && env.ACE_ENABLED == '1'
+        run: |
+          python scripts/validate_live_loop.py --metrics live_loop_artifacts/metrics.json
 
       - name: Upload live loop artifacts
         if: always()
@@ -77,4 +108,8 @@ jobs:
             live_loop_artifacts/
             logs/
             live_loop_summary.json
+            data/replay_buffer.jsonl
+            artifacts/replay/
+            artifacts/policy_replay.pkl
+            artifacts/policy_prev.pkl
           if-no-files-found: ignore

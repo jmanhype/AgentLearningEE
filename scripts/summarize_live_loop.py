@@ -6,7 +6,7 @@ import argparse
 import json
 from collections import defaultdict
 from pathlib import Path
-from typing import Dict, Iterable
+from typing import Dict, Iterable, Any
 
 
 def read_jsonl(path: Path) -> Iterable[dict]:
@@ -45,11 +45,12 @@ def summarize_episodes(artifacts_dir: Path) -> Dict[str, dict]:
     return summary
 
 
-def count_reflections(artifacts_dir: Path) -> int:
-    total = 0
-    for path in artifacts_dir.glob("reflections_*.jsonl"):
-        total += sum(1 for _ in read_jsonl(path))
-    return total
+def load_metrics(artifacts_dir: Path) -> Dict[str, Any]:
+    metrics_path = artifacts_dir / "metrics.json"
+    if not metrics_path.exists():
+        return {}
+    with metrics_path.open("r", encoding="utf-8") as handle:
+        return json.load(handle)
 
 
 def main() -> None:
@@ -67,12 +68,23 @@ def main() -> None:
         raise SystemExit(f"Artifacts directory not found: {artifacts_dir}")
 
     episode_summary = summarize_episodes(artifacts_dir)
-    total_reflections = count_reflections(artifacts_dir)
+    metrics = load_metrics(artifacts_dir)
+
+    if metrics:
+        total_reflections = metrics.get("total_reflections", 0)
+    else:
+        # Fallback: count reflection files if metrics absent
+        total_reflections = 0
+        for path in artifacts_dir.glob("reflections_*.jsonl"):
+            total_reflections += sum(1 for _ in read_jsonl(path))
 
     output = {
         "episodes": episode_summary,
         "total_reflections": total_reflections,
     }
+
+    if metrics:
+        output["metrics"] = metrics
 
     print(json.dumps(output, indent=2, sort_keys=True))
 
