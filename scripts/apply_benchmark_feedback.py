@@ -13,6 +13,13 @@ from ace.repositories.playbook_repository import PlaybookRepository
 from ace.utils.database import get_session
 
 
+def _load_ingestion_summary(path: Path) -> Dict:
+    if not path.exists():
+        return {}
+    with path.open("r", encoding="utf-8") as handle:
+        return json.load(handle)
+
+
 def _load_results(path: Path) -> Dict:
     if not path.exists():
         raise FileNotFoundError(f"Benchmark results not found at {path}")
@@ -116,6 +123,7 @@ def main() -> None:
     parser.add_argument("--helpful-increment", type=int, default=1, help="Helpful increment for successful tasks")
     parser.add_argument("--harmful-increment", type=int, default=1, help="Harmful increment for failed tasks")
     parser.add_argument("--metrics-path", type=Path, default=Path("live_loop_artifacts/metrics.json"), help="Path to live loop metrics JSON")
+    parser.add_argument("--ingestion-summary", type=Path, default=Path("artifacts/replay/ingestion_summary.json"), help="Path to ACE ingestion summary for fallback mapping")
     args = parser.parse_args()
 
     results = _load_results(args.results)
@@ -124,6 +132,9 @@ def main() -> None:
     if not evaluations:
         print("No evaluations in results; skipping benchmark feedback")
         return
+
+    ingestion_summary = _load_ingestion_summary(args.ingestion_summary)
+    fallback_ids = ingestion_summary.get("incremented_ids") or ingestion_summary.get("added_ids") or []
 
     successes, failures = _split_outcomes(evaluations)
 
@@ -140,17 +151,38 @@ def main() -> None:
         harmful_increment=args.harmful_increment,
     )
 
-    if success_ids or failure_ids:
-        _update_metrics(
-            args.metrics_path,
+    if not success_ids and successes and fallback_ids:
+        success_ids = _apply_feedback(
             domain_id=args.domain,
-            successes=successes,
-            failures=failures,
+            task_ids=[],
             helpful_increment=args.helpful_increment,
-            harmful_increment=args.harmful_increment,
-            updated_success_ids=success_ids,
-            updated_failure_ids=failure_ids,
+            harmful_increment=0,
         )
+    if not success_ids and successes and fallback_ids:
+        with get_session() as session:
+            repo = PlaybookRepository(session)
+            bullets = repo.get_by_domain(args.domain)
+            updated = []
+            for bullet in bullets:
+                if bullet.id in fallback_ids and bullet.stage != PlaybookStage.QUARANTINED:
+                    bullet.helpful_count += args.helpful_increment
+                    repo.update(bullet)
+                    updated.append(bullet.id)
+            if updated:
+                session.commit()
+            if updated:
+                success_ids = updated
+
+    _update_metrics(
+        args.metrics_path,
+        domain_id=args.domain,
+        successes=successes,
+        failures=failures,
+        helpful_increment=args.helpful_increment,
+        harmful_increment=args.harmful_increment,
+        updated_success_ids=success_ids,
+        updated_failure_ids=failure_ids,
+    )
 
     print(
         json.dumps(
