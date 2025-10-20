@@ -100,7 +100,7 @@ jobs:
               suite="data/claims_samples/claims_20.jsonl"
               ;;
           esac
-          python scripts/run_benchmark.py "$suite" --domain "${{ matrix.domain }}" --output "results/${{ matrix.domain }}_${{ github.run_id }}.json" --max-tasks 10
+          python scripts/run_benchmark.py "$suite" --domain "${{ matrix.domain }}" --output "results/${{ matrix.domain }}_${{ github.run_id }}.json" --max-tasks 10 --offline
 
       - name: Run guardrail integrity sweep
         run: |
