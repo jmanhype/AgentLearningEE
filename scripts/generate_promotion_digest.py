@@ -13,6 +13,21 @@ from ace.repositories.playbook_repository import PlaybookRepository
 
 METRICS_DEFAULT = Path("live_loop_artifacts/metrics.json")
 
+CHECKLIST_ITEMS = [
+    "Review promoted bullets and confirm accuracy",
+    "Investigate newly demoted or penalized items",
+    "Acknowledge benchmark failures and assign follow-up",
+    "Update prod rollback notes if demotions occurred",
+]
+
+
+def reviewer_checklist() -> List[str]:
+    lines = ["## Reviewer Checklist", ""]
+    for item in CHECKLIST_ITEMS:
+        lines.append(f"- [ ] {item}")
+    lines.append("")
+    return lines
+
 
 def load_promotion_report(path: Path) -> Dict[str, Any]:
     if not path.exists():
@@ -32,7 +47,7 @@ def summarize_feedback(metrics: Dict[str, Any]) -> List[str]:
         last = benchmark_history[-1]
         successes = last.get("tasks_succeeded", [])
         failures = last.get("tasks_failed", [])
-        lines.append("## Benchmark Feedback\n")
+        lines.append("## Benchmark Feedback")
         lines.append(f"- Successes: {len(successes)}")
         if successes:
             lines.append("  - Tasks: " + ", ".join(successes[:10]))
@@ -49,7 +64,7 @@ def summarize_feedback(metrics: Dict[str, Any]) -> List[str]:
     if negative_history:
         last = negative_history[-1]
         tasks = last.get("tasks", [])
-        lines.append("## Guardrail Penalties\n")
+        lines.append("## Guardrail Penalties")
         lines.append(f"- Penalized tasks: {len(tasks)}")
         if tasks:
             lines.append("  - Tasks: " + ", ".join(tasks[:10]))
@@ -62,7 +77,7 @@ def summarize_feedback(metrics: Dict[str, Any]) -> List[str]:
         last = prod_history[-1]
         promoted = last.get("promoted", [])
         demoted = last.get("demoted", [])
-        lines.append("## Prod Promotion Summary\n")
+        lines.append("## Prod Promotion Summary")
         lines.append(f"- Promoted to prod: {len(promoted)}")
         if promoted:
             lines.append("  - Bullets: " + ", ".join(promoted[:10]))
@@ -132,6 +147,7 @@ def main() -> None:
                 metrics_data = {}
 
     lines = [f"# ACE Promotion Digest ({domain_id})\n"]
+    lines.extend(reviewer_checklist())
 
     if promoted_ids or quarantined_ids:
         with get_session() as session:

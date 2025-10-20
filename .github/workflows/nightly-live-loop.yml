@@ -116,6 +116,10 @@ jobs:
         run: |
           python scripts/apply_benchmark_feedback.py --results "results/${{ matrix.domain }}_${{ github.run_id }}.json" --domain "${{ matrix.domain }}" --helpful-increment 1 --harmful-increment 1
 
+      - name: Ingest production telemetry
+        run: |
+          python scripts/ingest_prod_telemetry.py --domain "${{ matrix.domain }}" --telemetry "artifacts/prod_telemetry/${{ matrix.domain }}.jsonl"
+
       - name: Run guardrail integrity sweep
         run: |
           python scripts/run_guardrail_sweep.py --domain "${{ matrix.domain }}" --output artifacts/replay/guardrail_sweep.json
@@ -163,6 +167,11 @@ jobs:
             echo '```' >> "$GITHUB_STEP_SUMMARY"
             echo '> Full review: artifacts/replay/promotion_review.md' >> "$GITHUB_STEP_SUMMARY"
           fi
+
+      - name: Evaluate governance alerts
+        if: always()
+        run: |
+          python scripts/evaluate_governance.py --metrics live_loop_artifacts/metrics.json --output artifacts/governance_alerts.json
 
       - name: Validate ACE ingestion
         if: always() && env.ACE_ENABLED == '1'
