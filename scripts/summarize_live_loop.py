@@ -86,6 +86,12 @@ def main() -> None:
     if metrics:
         output["metrics"] = metrics
 
+        slo_pass = (
+            metrics.get("total_ace_updates", 0) > 0
+            and metrics.get("guardrail_failures", 0) <= metrics.get("guardrail_passes", 0)
+        )
+        output["slo_status"] = "pass" if slo_pass else "fail"
+
     print(json.dumps(output, indent=2, sort_keys=True))
 
 

@@ -15,7 +15,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        domain: [swe-bench, magicbrush, claims-processing]
+        domain: [swe-bench, magicbrush, claims-processing, finance-qa]
 
     steps:
       - name: Checkout repository
@@ -133,6 +133,13 @@ jobs:
             echo '```' >> "$GITHUB_STEP_SUMMARY"
             cat live_loop_artifacts/metrics.prom >> "$GITHUB_STEP_SUMMARY"
             echo '```' >> "$GITHUB_STEP_SUMMARY"
+          fi
+          if [ -f artifacts/replay/promotion_review.md ]; then
+            echo '#### Promotion Review Digest' >> "$GITHUB_STEP_SUMMARY"
+            echo '```markdown' >> "$GITHUB_STEP_SUMMARY"
+            head -n 50 artifacts/replay/promotion_review.md >> "$GITHUB_STEP_SUMMARY"
+            echo '```' >> "$GITHUB_STEP_SUMMARY"
+            echo '> Full review: artifacts/replay/promotion_review.md' >> "$GITHUB_STEP_SUMMARY"
           fi
 
       - name: Validate ACE ingestion
