@@ -202,40 +202,40 @@ def main() -> None:
     aggregated_path = args.output_dir / "reflection_data.jsonl"
     write_aggregated_reflections(aggregated_path, reflections)
 
-    if not configure_lm_from_env():
+    lm_available = configure_lm_from_env()
+    if not lm_available:
         logger.warning("No language model configured; skipping replay training.")
-        return
-
-    logger.info(
-        "Running policy training on replay reflections",
-        extra={"reflections": len(reflections), "output": str(args.policy_output)},
-    )
-
-    _, policy_metrics = train_policy(
-        reflection_data_path=str(aggregated_path),
-        output_path=str(args.policy_output),
-        metric_threshold=None,
-        logger=logger,
-    )
-
-    metrics_path = args.output_dir / "policy_metrics.json"
-    with metrics_path.open("w", encoding="utf-8") as handle:
-        json.dump(policy_metrics, handle, indent=2, sort_keys=True)
-
-    latest_policy_path = Path("artifacts/policy.pkl")
-    if latest_policy_path.exists():
-        backup_path = latest_policy_path.with_name("policy_prev.pkl")
-        shutil.copy2(latest_policy_path, backup_path)
+    else:
         logger.info(
-            "Backed up previous policy",
-            extra={"backup_path": str(backup_path)},
+            "Running policy training on replay reflections",
+            extra={"reflections": len(reflections), "output": str(args.policy_output)},
         )
 
-    shutil.copy2(args.policy_output, latest_policy_path)
-    logger.info(
-        "Promoted replay-trained policy to artifacts/policy.pkl",
-        extra={"policy_path": str(args.policy_output)},
-    )
+        _, policy_metrics = train_policy(
+            reflection_data_path=str(aggregated_path),
+            output_path=str(args.policy_output),
+            metric_threshold=None,
+            logger=logger,
+        )
+
+        metrics_path = args.output_dir / "policy_metrics.json"
+        with metrics_path.open("w", encoding="utf-8") as handle:
+            json.dump(policy_metrics, handle, indent=2, sort_keys=True)
+
+        latest_policy_path = Path("artifacts/policy.pkl")
+        if latest_policy_path.exists():
+            backup_path = latest_policy_path.with_name("policy_prev.pkl")
+            shutil.copy2(latest_policy_path, backup_path)
+            logger.info(
+                "Backed up previous policy",
+                extra={"backup_path": str(backup_path)},
+            )
+
+        shutil.copy2(args.policy_output, latest_policy_path)
+        logger.info(
+            "Promoted replay-trained policy to artifacts/policy.pkl",
+            extra={"policy_path": str(args.policy_output)},
+        )
 
     domain_id = os.getenv("ACE_DOMAIN_ID", "default")
     ingestion_result: Optional[Dict[str, Any]] = None
