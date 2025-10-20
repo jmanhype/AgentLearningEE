@@ -32,9 +32,19 @@ def main() -> None:
     total_ace_updates = metrics.get("total_ace_updates", 0)
     domain = metrics.get("domain")
 
-    if ace_enabled and total_reflections > 0 and total_ace_updates == 0:
+    history = metrics.get("ace_update_history", []) or []
+    added = sum(int(entry.get("added", 0) or 0) for entry in history)
+    incremented = sum(int(entry.get("incremented", 0) or 0) for entry in history)
+    duplicates = sum(int(entry.get("duplicates", 0) or 0) for entry in history)
+
+    if ace_enabled and total_reflections > 0 and (added + incremented) == 0:
         raise SystemExit(
             "ACE validation failed: reflections were generated but no ACE playbook updates occurred."
+        )
+
+    if ace_enabled and (added + incremented) > 0 and duplicates > (added + incremented) * 2:
+        raise SystemExit(
+            f"ACE validation failed: duplicates ({duplicates}) exceed allowed threshold relative to added/incremented ({added + incremented})."
         )
 
     print(
@@ -43,6 +53,9 @@ def main() -> None:
                 "ace_enabled": ace_enabled,
                 "total_reflections": total_reflections,
                 "total_ace_updates": total_ace_updates,
+                "ace_updates_added": added,
+                "ace_updates_incremented": incremented,
+                "ace_updates_duplicates": duplicates,
                 "status": "ok",
             },
             indent=2,

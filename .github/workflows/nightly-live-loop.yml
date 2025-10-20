@@ -114,6 +114,10 @@ jobs:
         run: |
           python scripts/export_prom_metrics.py --metrics live_loop_artifacts/metrics.json --promotion-report artifacts/replay/promotion_report.json --output live_loop_artifacts/metrics.prom
 
+      - name: Update metrics history
+        run: |
+          python scripts/update_metrics_history.py --metrics live_loop_artifacts/metrics.json --history artifacts/metrics_history.jsonl
+
       - name: Summarize live loop artifacts
         if: always()
         run: |
@@ -147,6 +151,18 @@ jobs:
         run: |
           python scripts/validate_live_loop.py --metrics live_loop_artifacts/metrics.json
 
+      - name: Post review digest comment
+        if: always() && vars.REVIEW_ISSUE_NUMBER != ''
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          if [ -f artifacts/replay/promotion_review.md ]; then
+            body=$(printf "Nightly ACE review - domain %s (run %s)\n\n\`\`\`markdown\n%s\n\`\`\`\n[Artifacts](%s/%s/actions/runs/%s)" "${{ matrix.domain }}" "${{ github.run_id }}" "$(head -n 40 artifacts/replay/promotion_review.md)" "${{ github.server_url }}" "${{ github.repository }}" "${{ github.run_id }}")
+            gh issue comment "${{ vars.REVIEW_ISSUE_NUMBER }}" --body "$body"
+          else
+            echo "No promotion review for ${{ matrix.domain }}; skipping comment"
+          fi
+
       - name: Upload live loop artifacts
         if: always()
         uses: actions/upload-artifact@v4
@@ -160,6 +176,7 @@ jobs:
             artifacts/replay/
             artifacts/policy_replay.pkl
             artifacts/policy_prev.pkl
+            artifacts/metrics_history.jsonl
             results/
             live_loop_artifacts/metrics.prom
           if-no-files-found: ignore

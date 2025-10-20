@@ -62,6 +62,31 @@ FINANCE_DATA = [
         "ground_truth": "fail",
         "instructions": "Return 'pass' if cash flow >= 0 else 'fail'.",
     },
+    {
+        "task_id": "finance-case-006",
+        "ground_truth": "pass",
+        "instructions": "Return 'pass' if cash flow >= 0 else 'fail'.",
+    },
+    {
+        "task_id": "finance-case-007",
+        "ground_truth": "fail",
+        "instructions": "Return 'pass' if debt-to-equity <= 2.5 else 'fail'.",
+    },
+    {
+        "task_id": "finance-case-008",
+        "ground_truth": "pass",
+        "instructions": "Return 'pass' if debt-to-equity <= 2.5 else 'fail'.",
+    },
+    {
+        "task_id": "finance-case-009",
+        "ground_truth": "fail",
+        "instructions": "Return 'pass' if margin >= 0.15 else 'fail'.",
+    },
+    {
+        "task_id": "finance-case-010",
+        "ground_truth": "pass",
+        "instructions": "Return 'pass' if growth >= 0.05 else 'fail'.",
+    },
 ]
 
 

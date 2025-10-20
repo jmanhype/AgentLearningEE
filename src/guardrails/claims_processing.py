@@ -74,6 +74,41 @@ CLAIMS_DATA = [
             "instructions": "Return 'approve' or 'deny'. Approve theft claims for premium tier regardless of amount.",
         },
     },
+    {
+        "task_id": "claims-case-006",
+        "ground_truth": "approve",
+        "guardrail": {
+            "instructions": "Approve basic policy vandalism claims when estimate is below $1,000.",
+        },
+    },
+    {
+        "task_id": "claims-case-007",
+        "ground_truth": "deny",
+        "guardrail": {
+            "instructions": "Deny hit-and-run claims if documentation is missing regardless of tier.",
+        },
+    },
+    {
+        "task_id": "claims-case-008",
+        "ground_truth": "approve",
+        "guardrail": {
+            "instructions": "Premium tier covers all weather incidents; approve by default.",
+        },
+    },
+    {
+        "task_id": "claims-case-009",
+        "ground_truth": "deny",
+        "guardrail": {
+            "instructions": "Deny mechanical wear claims for basic policies.",
+        },
+    },
+    {
+        "task_id": "claims-case-010",
+        "ground_truth": "approve",
+        "guardrail": {
+            "instructions": "Approve minor glass repairs under $500 for standard tier.",
+        },
+    },
 ]
 
 
