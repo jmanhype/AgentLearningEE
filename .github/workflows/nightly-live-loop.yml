@@ -58,6 +58,7 @@ jobs:
           echo "ACE_ENABLED=1" >> "$GITHUB_ENV"
           echo "ACE_ARGS=--ace" >> "$GITHUB_ENV"
           echo "ACE_DOMAIN_ID=${{ matrix.domain }}" >> "$GITHUB_ENV"
+          echo "ACE_BOOTSTRAP_HELPFUL_TARGET=3" >> "$GITHUB_ENV"
 
       - name: Initialize ACE database schema
         run: |

@@ -107,6 +107,9 @@ class InProcessAceClient:
                     "incremented": int,
                     "duplicates": int,
                     "total_insights": int,
+                    "added_ids": List[str],
+                    "incremented_ids": List[str],
+                    "quarantined_ids": List[str],
                 }
         """
         if not bridge_insights:
@@ -135,11 +138,27 @@ class InProcessAceClient:
         # Update statistics
         self._insights_ingested += len(bridge_insights)
 
+        added_ids: List[str] = []
+        incremented_ids: List[str] = []
+        quarantined_ids: List[str] = []
+
+        for delta in curator_output.delta_updates:
+            operation = (delta.operation or "").lower()
+            if operation == "add":
+                added_ids.append(delta.bullet_id)
+            elif operation in {"increment", "update"}:
+                incremented_ids.append(delta.bullet_id)
+            elif operation == "quarantine":
+                quarantined_ids.append(delta.bullet_id)
+
         return {
             "added": curator_output.new_bullets_added,
             "incremented": curator_output.existing_bullets_incremented,
             "duplicates": curator_output.duplicates_detected,
             "total_insights": len(bridge_insights),
+            "added_ids": added_ids,
+            "incremented_ids": incremented_ids,
+            "quarantined_ids": quarantined_ids,
         }
 
     def render_playbook(

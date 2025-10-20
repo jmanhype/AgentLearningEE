@@ -8,7 +8,7 @@ import os
 import shutil
 import time
 from pathlib import Path
-from typing import Dict, List, Optional
+from typing import Any, Dict, List, Optional
 
 import dspy
 
@@ -101,6 +101,58 @@ def write_aggregated_reflections(output_path: Path, reflections: List[Dict]) -> 
     save_jsonl(reflections, str(output_path))
 
 
+def write_ingestion_summary(path: Path, domain_id: str, ingestion_result: Dict) -> None:
+    summary = {
+        "domain": domain_id,
+        "added": ingestion_result.get("added", 0),
+        "incremented": ingestion_result.get("incremented", 0),
+        "duplicates": ingestion_result.get("duplicates", 0),
+        "total_insights": ingestion_result.get("total_insights", 0),
+        "added_ids": ingestion_result.get("added_ids", []),
+        "incremented_ids": ingestion_result.get("incremented_ids", []),
+        "quarantined_ids": ingestion_result.get("quarantined_ids", []),
+        "timestamp": time.time(),
+    }
+
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(summary, indent=2, sort_keys=True), encoding="utf-8")
+
+
+def bootstrap_new_bullets(
+    *,
+    domain_id: str,
+    bullet_ids: List[str],
+    min_helpful: int,
+    harmful_increment: int = 0,
+) -> List[str]:
+    if not bullet_ids:
+        return []
+
+    updated_ids: List[str] = []
+    with get_session() as session:
+        repo = PlaybookRepository(session)
+
+        for bullet_id in bullet_ids:
+            bullet = repo.get_by_id(bullet_id, domain_id)
+            if bullet is None:
+                continue
+
+            new_helpful = max(bullet.helpful_count, min_helpful)
+            new_harmful = bullet.harmful_count + harmful_increment
+
+            if new_helpful == bullet.helpful_count and new_harmful == bullet.harmful_count:
+                continue
+
+            bullet.helpful_count = new_helpful
+            bullet.harmful_count = new_harmful
+            repo.update(bullet)
+            updated_ids.append(bullet_id)
+
+        session.commit()
+
+    return updated_ids
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description="Train policy from live loop reflections")
     parser.add_argument(
@@ -128,6 +180,9 @@ def main() -> None:
         help="Minimum reflections required to trigger replay training",
     )
     args = parser.parse_args()
+
+    bootstrap_target = int(os.getenv("ACE_BOOTSTRAP_HELPFUL_TARGET", "3"))
+    bootstrap_harmful_increment = int(os.getenv("ACE_BOOTSTRAP_HARMFUL_INCREMENT", "0"))
 
     logger = setup_logger("experience_replay")
 
@@ -183,7 +238,9 @@ def main() -> None:
     )
 
     domain_id = os.getenv("ACE_DOMAIN_ID", "default")
-    ingestion_result: Optional[Dict[str, int]] = None
+    ingestion_result: Optional[Dict[str, Any]] = None
+    ingestion_summary_path = args.output_dir / "ingestion_summary.json"
+    bootstrap_ids: List[str] = []
 
     if ACE_INGEST_AVAILABLE:
         try:
@@ -200,6 +257,24 @@ def main() -> None:
                         "duplicates": ingestion_result.get("duplicates", 0),
                     },
                 )
+                write_ingestion_summary(ingestion_summary_path, domain_id, ingestion_result)
+
+                bootstrap_ids = bootstrap_new_bullets(
+                    domain_id=domain_id,
+                    bullet_ids=ingestion_result.get("added_ids", []),
+                    min_helpful=bootstrap_target,
+                    harmful_increment=bootstrap_harmful_increment,
+                )
+                if bootstrap_ids:
+                    logger.info(
+                        "Bootstrapped ACE helpful counters",
+                        extra={
+                            "domain_id": domain_id,
+                            "bootstrap_ids": bootstrap_ids,
+                            "min_helpful": bootstrap_target,
+                            "harmful_increment": bootstrap_harmful_increment,
+                        },
+                    )
         except Exception as exc:  # pragma: no cover - defensive logging
             logger.warning(
                 "ace_ingestion_failed",
@@ -219,11 +294,24 @@ def main() -> None:
                 "incremented": ingestion_result.get("incremented", 0),
                 "duplicates": ingestion_result.get("duplicates", 0),
                 "total_insights": ingestion_result.get("total_insights", len(reflections)),
+                "added_ids": ingestion_result.get("added_ids", []),
+                "incremented_ids": ingestion_result.get("incremented_ids", []),
+                "quarantined_ids": ingestion_result.get("quarantined_ids", []),
             }
         )
         metrics["total_ace_updates"] = metrics.get("total_ace_updates", 0) + 1
         metrics["last_ace_update_time"] = time.time()
         metrics["domain"] = domain_id
+
+        if bootstrap_ids:
+            metrics.setdefault("ace_bootstrap_history", []).append(
+                {
+                    "timestamp": time.time(),
+                    "bootstrap_ids": bootstrap_ids,
+                    "min_helpful": bootstrap_target,
+                    "harmful_increment": bootstrap_harmful_increment,
+                }
+            )
 
         with metrics_path.open("w", encoding="utf-8") as handle:
             json.dump(metrics, handle, indent=2, sort_keys=True)
