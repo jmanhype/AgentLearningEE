@@ -1,0 +1,64 @@
+name: Example Submission
+description: Share your example use case
+title: "[Example]: "
+labels: ["example", "community"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Share your example with the community! 🎉
+
+  - type: input
+    id: domain
+    attributes:
+      label: Domain/Use Case
+      description: What domain is this example for?
+      placeholder: "e.g., Email automation, Game AI, Task management"
+    validations:
+      required: true
+
+  - type: textarea
+    id: description
+    attributes:
+      label: Description
+      description: Describe what your example does
+      placeholder: "This example trains an agent to..."
+    validations:
+      required: true
+
+  - type: textarea
+    id: code
+    attributes:
+      label: Code
+      description: Share your example code or link to repo
+      placeholder: |
+        ```python
+        # Your example code here
+        ```
+      render: python
+    validations:
+      required: true
+
+  - type: textarea
+    id: results
+    attributes:
+      label: Results
+      description: What were the results? Metrics, screenshots, etc.
+      placeholder: "Training accuracy: 85%, Expansion ratio: 3.5x..."
+
+  - type: textarea
+    id: learnings
+    attributes:
+      label: Key Learnings
+      description: What did you learn? Any tips for others?
+      placeholder: "I learned that... A key insight was..."
+
+  - type: checkboxes
+    id: sharing
+    attributes:
+      label: Permission to Share
+      options:
+        - label: "I permit this example to be added to the official examples/ folder"
+          required: false
+        - label: "I permit this to be featured in documentation"
+          required: false

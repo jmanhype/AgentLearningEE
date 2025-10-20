@@ -1,0 +1,35 @@
+name: Benchmark Smoke
+
+on:
+  push:
+    branches: ["main", "master"]
+  pull_request:
+
+jobs:
+  run-benchmark:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -e .[dev]
+
+      - name: Scaffold sample domain (dry run)
+        run: |
+          python scripts/scaffold_domain.py ci-smoke || true
+          rm -f benchmarks/ci-smoke.jsonl src/guardrails/ci-smoke.py docs/domains/ci-smoke.md
+
+      - name: Run benchmark harness in offline mode
+        run: |
+          python scripts/run_benchmark.py benchmarks/finance_subset.jsonl --domain finance --offline --output results/ci_smoke.json
+
+      - name: Show benchmark summary
+        run: cat results/ci_smoke.json

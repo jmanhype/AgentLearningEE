@@ -1,0 +1,47 @@
+name: Question
+description: Ask a question about using the framework
+title: "[Question]: "
+labels: ["question"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Have a question? We're here to help!
+
+        **Before asking:**
+        - Check the [README](https://github.com/jmanhype/AgentLearningEE/blob/main/README.md)
+        - Read the [Quickstart Guide](https://github.com/jmanhype/AgentLearningEE/blob/main/QUICKSTART.md)
+        - Search [existing discussions](https://github.com/jmanhype/AgentLearningEE/discussions)
+
+  - type: textarea
+    id: question
+    attributes:
+      label: Your Question
+      description: What would you like to know?
+      placeholder: "How do I...?"
+    validations:
+      required: true
+
+  - type: textarea
+    id: context
+    attributes:
+      label: What have you tried?
+      description: What have you already attempted?
+      placeholder: |
+        I tried:
+        1. ...
+        2. ...
+
+  - type: textarea
+    id: goal
+    attributes:
+      label: What are you trying to achieve?
+      description: Describe your use case or goal
+      placeholder: "I'm trying to build an agent that..."
+
+  - type: textarea
+    id: code
+    attributes:
+      label: Relevant Code
+      description: If applicable, share relevant code
+      render: python
