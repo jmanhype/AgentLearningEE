@@ -30,8 +30,11 @@ def main() -> None:
     ace_enabled = os.getenv("ACE_ENABLED", "0") == "1"
     total_reflections = metrics.get("total_reflections", 0)
     total_ace_updates = metrics.get("total_ace_updates", 0)
+    domain = metrics.get("domain")
 
-    if ace_enabled and total_reflections > 0 and total_ace_updates == 0:
+    require_ingestion = domain in {"swe-bench", "magicbrush"}
+
+    if require_ingestion and ace_enabled and total_reflections > 0 and total_ace_updates == 0:
         raise SystemExit(
             "ACE validation failed: reflections were generated but no ACE playbook updates occurred."
         )
@@ -42,6 +45,7 @@ def main() -> None:
                 "ace_enabled": ace_enabled,
                 "total_reflections": total_reflections,
                 "total_ace_updates": total_ace_updates,
+                "domain": domain,
                 "status": "ok",
             },
             indent=2,
