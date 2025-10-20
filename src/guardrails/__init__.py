@@ -39,6 +39,7 @@ def get_guardrail(task_id: str, domain: Optional[str] = None) -> Optional[Numeri
 
 # Import default domains
 from . import finance  # noqa: E402,F401
+from . import claims_processing  # noqa: E402,F401
 
 
 __all__ = ["NumericGuardrail", "register_domain", "all_domains", "get_guardrail"]
