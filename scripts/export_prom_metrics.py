@@ -77,6 +77,18 @@ def main() -> None:
         lines.append(emit_metric("ace_promoted_bullets", len(promotion.get("promoted", [])), labels))
         lines.append(emit_metric("ace_quarantined_bullets", len(promotion.get("quarantined", [])), labels))
 
+    bootstrap_history = metrics.get("ace_bootstrap_history", []) if metrics else []
+    if bootstrap_history:
+        lines.append(emit_metric("ace_bootstrap_events_total", len(bootstrap_history), labels))
+        last_bootstrap = bootstrap_history[-1]
+        lines.append(emit_metric("ace_bootstrap_last_count", len(last_bootstrap.get("bootstrap_ids", [])), labels))
+
+    negative_history = metrics.get("ace_negative_feedback_history", []) if metrics else []
+    if negative_history:
+        lines.append(emit_metric("ace_negative_feedback_events_total", len(negative_history), labels))
+        last_negative = negative_history[-1]
+        lines.append(emit_metric("ace_negative_feedback_last_count", len(last_negative.get("bullet_ids", [])), labels))
+
     args.output.parent.mkdir(parents=True, exist_ok=True)
     args.output.write_text("\n".join(lines) + "\n", encoding="utf-8")
 

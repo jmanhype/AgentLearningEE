@@ -146,7 +146,7 @@ class InProcessAceClient:
             operation = (delta.operation or "").lower()
             if operation == "add":
                 added_ids.append(delta.bullet_id)
-            elif operation in {"increment", "update"}:
+            elif operation.startswith("increment_"):
                 incremented_ids.append(delta.bullet_id)
             elif operation == "quarantine":
                 quarantined_ids.append(delta.bullet_id)

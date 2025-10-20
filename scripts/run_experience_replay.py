@@ -102,6 +102,59 @@ def write_aggregated_reflections(output_path: Path, reflections: List[Dict]) -> 
     save_jsonl(reflections, str(output_path))
 
 
+def collect_guardrail_failures(episodes_dir: Path) -> List[str]:
+    failures: List[str] = []
+    if not episodes_dir.exists():
+        return failures
+
+    seen = set()
+    for episode_path in sorted(episodes_dir.glob("episodes_*.jsonl")):
+        try:
+            episodes = load_jsonl(str(episode_path))
+        except FileNotFoundError:
+            continue
+        for episode in episodes:
+            task_id = episode.get("task_id")
+            if not task_id:
+                continue
+            guardrail_ok = episode.get("guardrail_passed", True)
+            corrected = episode.get("guardrail_corrected_action")
+            if guardrail_ok and not corrected:
+                continue
+            if task_id not in seen:
+                seen.add(task_id)
+                failures.append(task_id)
+    return failures
+
+
+def apply_negative_feedback(
+    *,
+    domain_id: str,
+    task_ids: List[str],
+    harmful_increment: int = 1,
+) -> List[str]:
+    if not task_ids or harmful_increment <= 0:
+        return []
+
+    updated_ids: List[str] = []
+    tag_prefixes = {f"task:{tid}" for tid in task_ids}
+
+    with get_session() as session:
+        repo = PlaybookRepository(session)
+        bullets = repo.get_by_domain(domain_id)
+
+        for bullet in bullets:
+            tags = bullet.tags or []
+            if not any(tag in tag_prefixes for tag in tags):
+                continue
+            bullet.harmful_count += harmful_increment
+            repo.update(bullet)
+            updated_ids.append(bullet.id)
+
+        if updated_ids:
+            session.commit()
+
+    return updated_ids
 def write_ingestion_summary(path: Path, domain_id: str, ingestion_result: Dict) -> None:
     summary = {
         "domain": domain_id,
@@ -189,6 +242,7 @@ def main() -> None:
 
     bootstrap_target = int(os.getenv("ACE_BOOTSTRAP_HELPFUL_TARGET", "3"))
     bootstrap_harmful_increment = int(os.getenv("ACE_BOOTSTRAP_HARMFUL_INCREMENT", "0"))
+    negative_feedback_increment = int(os.getenv("ACE_NEGATIVE_FEEDBACK_INCREMENT", "1"))
 
     logger = setup_logger("experience_replay")
 
@@ -287,11 +341,31 @@ def main() -> None:
                 extra={"domain_id": domain_id, "error": str(exc)},
             )
 
+    guardrail_failures = collect_guardrail_failures(args.reflections_dir)
+    negative_ids: List[str] = []
+    if guardrail_failures:
+        negative_ids = apply_negative_feedback(
+            domain_id=domain_id,
+            task_ids=guardrail_failures,
+            harmful_increment=negative_feedback_increment,
+        )
+        if negative_ids:
+            logger.info(
+                "Applied negative feedback to ACE playbook",
+                extra={"domain_id": domain_id, "tasks": guardrail_failures, "bullet_ids": negative_ids},
+            )
+
     metrics_path = Path("live_loop_artifacts/metrics.json")
-    if ingestion_result and metrics_path.exists():
+    metrics = None
+    if metrics_path.exists():
         with metrics_path.open("r", encoding="utf-8") as handle:
             metrics = json.load(handle)
+    else:
+        metrics = {"domain": domain_id}
 
+    metrics_updated = False
+
+    if ingestion_result:
         metrics.setdefault("ace_update_history", []).append(
             {
                 "source": "experience_replay",
@@ -308,17 +382,31 @@ def main() -> None:
         metrics["total_ace_updates"] = metrics.get("total_ace_updates", 0) + 1
         metrics["last_ace_update_time"] = time.time()
         metrics["domain"] = domain_id
+        metrics_updated = True
 
-        if bootstrap_ids:
-            metrics.setdefault("ace_bootstrap_history", []).append(
-                {
-                    "timestamp": time.time(),
-                    "bootstrap_ids": bootstrap_ids,
-                    "min_helpful": bootstrap_target,
-                    "harmful_increment": bootstrap_harmful_increment,
-                }
-            )
+    if bootstrap_ids:
+        metrics.setdefault("ace_bootstrap_history", []).append(
+            {
+                "timestamp": time.time(),
+                "bootstrap_ids": bootstrap_ids,
+                "min_helpful": bootstrap_target,
+                "harmful_increment": bootstrap_harmful_increment,
+            }
+        )
+        metrics_updated = True
 
+    if guardrail_failures or negative_ids:
+        metrics.setdefault("ace_negative_feedback_history", []).append(
+            {
+                "timestamp": time.time(),
+                "tasks": guardrail_failures,
+                "bullet_ids": negative_ids,
+                "harmful_increment": negative_feedback_increment,
+            }
+        )
+        metrics_updated = True
+
+    if metrics_updated:
         with metrics_path.open("w", encoding="utf-8") as handle:
             json.dump(metrics, handle, indent=2, sort_keys=True)
 

@@ -96,6 +96,14 @@ def reflection_to_insight(refl: Dict) -> Dict:
     # Derive tags for section routing
     tags = _derive_tags(lesson, refl)
 
+    task_id = refl.get("task_id")
+    if task_id:
+        tags.append(f"task:{task_id}")
+
+    domain = refl.get("domain")
+    if domain:
+        tags.append(f"domain:{domain}")
+
     # Infer task from action
     action = refl.get("action") or refl.get("expert_action", "")
     task = _infer_task(action)
