@@ -112,6 +112,10 @@ jobs:
           esac
           python scripts/run_benchmark.py "$suite" --domain "${{ matrix.domain }}" --output "results/${{ matrix.domain }}_${{ github.run_id }}.json" --max-tasks 10 --offline
 
+      - name: Apply benchmark outcome feedback
+        run: |
+          python scripts/apply_benchmark_feedback.py --results "results/${{ matrix.domain }}_${{ github.run_id }}.json" --domain "${{ matrix.domain }}" --helpful-increment 1 --harmful-increment 1
+
       - name: Run guardrail integrity sweep
         run: |
           python scripts/run_guardrail_sweep.py --domain "${{ matrix.domain }}" --output artifacts/replay/guardrail_sweep.json

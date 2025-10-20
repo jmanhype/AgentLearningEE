@@ -89,6 +89,13 @@ def main() -> None:
         last_negative = negative_history[-1]
         lines.append(emit_metric("ace_negative_feedback_last_count", len(last_negative.get("bullet_ids", [])), labels))
 
+    benchmark_history = metrics.get("ace_benchmark_feedback_history", []) if metrics else []
+    if benchmark_history:
+        lines.append(emit_metric("ace_benchmark_feedback_events_total", len(benchmark_history), labels))
+        last_benchmark = benchmark_history[-1]
+        lines.append(emit_metric("ace_benchmark_feedback_successes", len(last_benchmark.get("tasks_succeeded", [])), labels))
+        lines.append(emit_metric("ace_benchmark_feedback_failures", len(last_benchmark.get("tasks_failed", [])), labels))
+
     args.output.parent.mkdir(parents=True, exist_ok=True)
     args.output.write_text("\n".join(lines) + "\n", encoding="utf-8")
 

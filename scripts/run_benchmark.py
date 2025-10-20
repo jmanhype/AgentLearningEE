@@ -6,7 +6,7 @@ import argparse
 import json
 import os
 from pathlib import Path
-from typing import Dict, List, Optional
+from typing import Any, Dict, List, Optional
 import importlib
 
 import dspy
@@ -180,6 +180,7 @@ def run_benchmark(
         "offline": offline,
         "missing_guardrails": missing_guardrails,
     }
+    evaluations: List[Dict[str, Any]] = []
     corrections: Dict[str, List[Dict]] = {"auto": []}
 
     for task in tasks:
@@ -206,6 +207,14 @@ def run_benchmark(
 
         is_correct = evaluate_answer(action, task, domain, corrected=corrections)
 
+        evaluation_record: Dict[str, Any] = {
+            "task_id": task.get("task_id"),
+            "correct": bool(is_correct),
+            "answer": action,
+            "ground_truth": task.get("ground_truth"),
+            "offline": offline,
+        }
+
         if is_correct:
             metrics["correct"] += 1
         else:
@@ -216,9 +225,12 @@ def run_benchmark(
                     "ground_truth": task.get("ground_truth"),
                 }
             )
+        evaluations.append(evaluation_record)
 
     if corrections["auto"]:
         metrics["auto_corrections"] = corrections["auto"]
+
+    metrics["evaluations"] = evaluations
 
     return metrics
 
