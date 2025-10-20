@@ -22,12 +22,14 @@ import time
 from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Callable, Dict, List, Optional, Protocol
+from typing import Any, Callable, Dict, List, Optional, Protocol, Tuple
 from collections import deque
 import logging
 
 from agent_learning.utils import save_jsonl, setup_logger
 from agent_learning.policy import PolicyModule
+from guardrails import get_guardrail
+from guardrails.base import NumericGuardrail
 
 
 # Environment Protocol (user-provided)
@@ -57,6 +59,11 @@ class Episode:
     action: str
     next_state: str
     timestamp: float = field(default_factory=time.time)
+    task_id: Optional[str] = None
+    domain: Optional[str] = None
+    ground_truth: Optional[str] = None
+    guardrail_passed: Optional[bool] = None
+    guardrail_corrected_action: Optional[str] = None
 
 
 @dataclass
@@ -75,6 +82,8 @@ class LiveLoopConfig:
     # ACE integration
     ace_enabled: bool = True  # Enable ACE playbook updates
     ace_update_interval: int = 10  # Update ACE every N reflections
+    default_guardrail_domain: Optional[str] = None
+    apply_guardrails: bool = True
 
     # Storage
     output_dir: Path = Path("live_loop_artifacts/")
@@ -93,6 +102,10 @@ class LiveLoopMetrics:
     total_episodes: int = 0
     total_reflections: int = 0
     total_ace_updates: int = 0
+    total_guardrail_checks: int = 0
+    guardrail_passes: int = 0
+    guardrail_failures: int = 0
+    guardrail_auto_corrections: int = 0
     loop_start_time: float = field(default_factory=time.time)
     last_reflection_time: Optional[float] = None
     last_ace_update_time: Optional[float] = None
@@ -190,6 +203,85 @@ class LiveExplorationLoop:
             self.logger.info(f"Policy loaded from {self.policy_path}")
         return self._policy_module
 
+    def _parse_environment_state(self, raw_state: Any) -> Tuple[str, Dict[str, Any]]:
+        """Normalize environment reset() output into state text and metadata."""
+
+        metadata: Dict[str, Any] = {}
+
+        if isinstance(raw_state, tuple) and len(raw_state) == 2 and isinstance(raw_state[1], dict):
+            state_text = str(raw_state[0])
+            metadata = dict(raw_state[1])
+        elif isinstance(raw_state, dict):
+            state_text = str(raw_state.get("state") or raw_state.get("description") or "")
+            metadata = {k: v for k, v in raw_state.items() if k not in {"state", "description"}}
+        else:
+            state_text = str(raw_state)
+
+        return state_text, metadata
+
+    def _augment_with_guardrail(self, state: str, guardrail: NumericGuardrail) -> str:
+        """Append guardrail instructions to state prompt."""
+
+        return (
+            f"{state}\n\nGuardrail: {guardrail.instructions} "
+            "Return only the final value exactly as specified."
+        )
+
+    def _apply_guardrails(
+        self,
+        action: str,
+        guardrail: Optional[NumericGuardrail],
+        ground_truth: Optional[str],
+        task_id: Optional[str],
+    ) -> Tuple[str, Dict[str, Any]]:
+        """Apply guardrail auto-correction and evaluation."""
+
+        if not guardrail or not self.config.apply_guardrails:
+            return action, {"evaluated": False}
+
+        evaluation_answer = action.strip()
+        auto_corrected: Optional[str] = None
+
+        if guardrail.auto_correct:
+            canonical = guardrail.canonical_answer()
+            if canonical and canonical != evaluation_answer:
+                auto_corrected = canonical
+                evaluation_answer = canonical
+                self.metrics.guardrail_auto_corrections += 1
+                self.logger.info(
+                    "guardrail_auto_corrected",
+                    extra={
+                        "task_id": task_id,
+                        "before": action,
+                        "after": canonical,
+                    },
+                )
+
+        passed: Optional[bool] = None
+        self.metrics.total_guardrail_checks += 1
+
+        if ground_truth:
+            passed = guardrail.validate(evaluation_answer, ground_truth)
+            if passed:
+                self.metrics.guardrail_passes += 1
+            else:
+                self.metrics.guardrail_failures += 1
+                self.logger.warning(
+                    "guardrail_violation",
+                    extra={
+                        "task_id": task_id,
+                        "answer": evaluation_answer,
+                        "ground_truth": ground_truth,
+                    },
+                )
+
+        return evaluation_answer, {
+            "evaluated": True,
+            "passed": passed,
+            "auto_corrected": auto_corrected,
+            "evaluation_answer": evaluation_answer,
+        }
+
     def _get_ace_client(self) -> Optional[Any]:
         """Get ACE client if enabled (cached)."""
         if not self.config.ace_enabled:
@@ -241,14 +333,37 @@ class LiveExplorationLoop:
         """
         try:
             # Reset environment
-            state = self.environment.reset()
+            raw_state = self.environment.reset()
+            state, metadata = self._parse_environment_state(raw_state)
+
+            task_id = metadata.get("task_id")
+            domain = metadata.get("domain") or self.config.default_guardrail_domain
+            ground_truth = metadata.get("ground_truth")
+
+            guardrail: Optional[NumericGuardrail] = None
+            if task_id:
+                guardrail = get_guardrail(task_id, domain=domain)
+
+            prompt_state = state
+            if guardrail and self.config.apply_guardrails:
+                prompt_state = self._augment_with_guardrail(state, guardrail)
 
             # Generate action
-            action, reasoning = self._generate_action(state)
+            action, reasoning = self._generate_action(prompt_state)
+
+            corrected_action = action
+            guardrail_result = {"evaluated": False}
+            if guardrail and self.config.apply_guardrails:
+                corrected_action, guardrail_result = self._apply_guardrails(
+                    action,
+                    guardrail,
+                    ground_truth,
+                    task_id,
+                )
 
             # Execute in environment
             start_time = time.time()
-            next_state, done = self.environment.step(action)
+            next_state, done = self.environment.step(corrected_action)
 
             # Check timeout
             if time.time() - start_time > self.config.episode_timeout:
@@ -257,12 +372,25 @@ class LiveExplorationLoop:
 
             episode = Episode(
                 state=state,
-                action=action,
+                action=corrected_action,
                 next_state=next_state,
                 timestamp=start_time,
+                task_id=task_id,
+                domain=domain,
+                ground_truth=ground_truth,
+                guardrail_passed=guardrail_result.get("passed"),
+                guardrail_corrected_action=guardrail_result.get("auto_corrected"),
             )
 
-            self.logger.debug(f"Episode collected: state={state[:50]}... action={action}")
+            self.logger.debug(
+                "Episode collected",
+                extra={
+                    "state_preview": state[:50],
+                    "action": corrected_action,
+                    "task_id": task_id,
+                    "guardrail_passed": guardrail_result.get("passed"),
+                },
+            )
 
             return episode
 
@@ -290,9 +418,10 @@ class LiveExplorationLoop:
         rollouts = [
             {
                 "state": ep.state,
-                "action": ep.action,
-                "next_state": ep.next_state,
-                "expert_action": ep.action,  # In live loop, policy action is "expert"
+                "expert_action": ep.action,
+                "expert_next_state": ep.next_state,
+                "alternative_action": "",
+                "alternative_next_state": "",
             }
             for ep in self.episode_buffer
         ]
@@ -312,9 +441,9 @@ class LiveExplorationLoop:
                 result = reflection_module(
                     state=rollout["state"],
                     expert_action=rollout["expert_action"],
-                    alternative_actions=rollout.get("alternative_actions", ""),
-                    expert_outcome=rollout["next_state"],
-                    alternative_outcomes=rollout.get("alternative_outcomes", ""),
+                    expert_next_state=rollout["expert_next_state"],
+                    alternative_action=rollout["alternative_action"],
+                    alternative_next_state=rollout["alternative_next_state"],
                 )
 
                 reflection = {
@@ -391,6 +520,10 @@ class LiveExplorationLoop:
                 "total_ace_updates": self.metrics.total_ace_updates,
                 "runtime_seconds": self.metrics.runtime_seconds(),
                 "episodes_per_minute": self.metrics.episodes_per_minute(),
+                "guardrail_checks": self.metrics.total_guardrail_checks,
+                "guardrail_passes": self.metrics.guardrail_passes,
+                "guardrail_failures": self.metrics.guardrail_failures,
+                "guardrail_auto_corrections": self.metrics.guardrail_auto_corrections,
             },
             "buffer_size": len(self.episode_buffer),
             "running": self._running,
@@ -445,6 +578,12 @@ class LiveExplorationLoop:
                                     "state": episode.state,
                                     "action": episode.action,
                                     "next_state": episode.next_state,
+                                    "timestamp": episode.timestamp,
+                                    "task_id": episode.task_id,
+                                    "domain": episode.domain,
+                                    "ground_truth": episode.ground_truth,
+                                    "guardrail_passed": episode.guardrail_passed,
+                                    "guardrail_corrected_action": episode.guardrail_corrected_action,
                                 }
                             ],
                             str(episode_path),
