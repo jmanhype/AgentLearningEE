@@ -1,0 +1,8 @@
+{
+  "training_data": "artifacts/reflection_data.jsonl",
+  "training_method": "dspy.BootstrapFewShot with ChainOfThought",
+  "accuracy": 0.2,
+  "reasoning_quality": 1.0,
+  "num_examples": 80,
+  "timestamp": "2025-10-14T17:30:01.019770Z"
+}

@@ -36,10 +36,13 @@ jobs:
         env:
           ACE_TOKEN: ${{ secrets.ACE_TOKEN }}
         run: |
-          echo "ACE_ENABLED=1" >> "$GITHUB_ENV"
-          echo "ACE_ARGS=--ace" >> "$GITHUB_ENV"
           if [ -z "$ACE_TOKEN" ]; then
-            echo "Running with local ACE stub (no ACE_TOKEN secret set)."
+            echo "Running without ACE integration (no ACE_TOKEN secret set)."
+            echo "ACE_ENABLED=0" >> "$GITHUB_ENV"
+            echo "ACE_ARGS=" >> "$GITHUB_ENV"
+          else
+            echo "ACE_ENABLED=1" >> "$GITHUB_ENV"
+            echo "ACE_ARGS=--ace" >> "$GITHUB_ENV"
           fi
 
       - name: Run live loop

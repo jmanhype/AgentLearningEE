@@ -58,11 +58,6 @@ Thumbs.db
 .coverage
 htmlcov/
 
-# DSPy artifacts
-artifacts/*.bin
-artifacts/*.pkl
-artifacts/*.pickle
-
 # Training data (keep examples, ignore generated data)
 data/expert_demos.jsonl
 data/exploratory_rollouts.jsonl
@@ -95,7 +90,9 @@ faiss_indices/
 # =============================================================================
 # Training Artifacts
 # =============================================================================
-artifacts/
+artifacts/*
+!artifacts/policy.pkl
+!artifacts/policy.meta.json
 live_loop_artifacts/
 
 # ACE Database
@@ -152,4 +149,3 @@ htmlcov/
 # =============================================================================
 .DS_Store
 Thumbs.db
-
