@@ -96,6 +96,13 @@ def main() -> None:
         lines.append(emit_metric("ace_benchmark_feedback_successes", len(last_benchmark.get("tasks_succeeded", [])), labels))
         lines.append(emit_metric("ace_benchmark_feedback_failures", len(last_benchmark.get("tasks_failed", [])), labels))
 
+    prod_history = metrics.get("ace_prod_promotion_history", []) if metrics else []
+    if prod_history:
+        lines.append(emit_metric("ace_prod_promotion_events_total", len(prod_history), labels))
+        last_prod = prod_history[-1]
+        lines.append(emit_metric("ace_prod_promoted_last", len(last_prod.get("promoted", [])), labels))
+        lines.append(emit_metric("ace_prod_demoted_last", len(last_prod.get("demoted", [])), labels))
+
     args.output.parent.mkdir(parents=True, exist_ok=True)
     args.output.write_text("\n".join(lines) + "\n", encoding="utf-8")
 

@@ -120,6 +120,10 @@ jobs:
         run: |
           python scripts/run_guardrail_sweep.py --domain "${{ matrix.domain }}" --output artifacts/replay/guardrail_sweep.json
 
+      - name: Promote playbook to prod
+        run: |
+          python scripts/promote_prod_playbook.py --domain "${{ matrix.domain }}" --staging-helpful-threshold 3 --prod-helpful-threshold 5 --harmful-cap 1
+
       - name: Generate promotion review digest
         run: |
           python scripts/generate_promotion_digest.py --promotion-report artifacts/replay/promotion_report.json --output artifacts/replay/promotion_review.md
