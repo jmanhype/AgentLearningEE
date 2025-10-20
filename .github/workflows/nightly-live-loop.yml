@@ -36,22 +36,21 @@ jobs:
         env:
           ACE_TOKEN: ${{ secrets.ACE_TOKEN }}
         run: |
-          if [ -z "$ACE_TOKEN" ]; then
-            echo "Running without ACE integration (no ACE_TOKEN secret set)."
-            echo "ACE_ENABLED=0" >> "$GITHUB_ENV"
-            echo "ACE_ARGS=" >> "$GITHUB_ENV"
-          else
-            echo "ACE_ENABLED=1" >> "$GITHUB_ENV"
-            echo "ACE_ARGS=--ace" >> "$GITHUB_ENV"
-          fi
+          echo "ACE_ENABLED=1" >> "$GITHUB_ENV"
+          echo "ACE_ARGS=--ace" >> "$GITHUB_ENV"
+
+      - name: Initialize ACE database schema
+        run: |
+          python - <<'PY'
+          from ace.utils.database import init_database
+          init_database("sqlite:///ace_playbook.db")
+          PY
 
       - name: Run live loop
         env:
           ACE_ENABLED: ${{ env.ACE_ENABLED }}
           ACE_DOMAIN_ID: ${{ matrix.domain }}
           ACE_TARGET_STAGE: shadow
-          ACE_TOKEN: ${{ secrets.ACE_TOKEN }}
-          ACE_ENDPOINT: ${{ secrets.ACE_ENDPOINT }}
           DATABASE_URL: sqlite:///ace_playbook.db
           PYTHONPATH: src
           OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
