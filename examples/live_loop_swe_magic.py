@@ -32,6 +32,7 @@ from typing import Callable, Dict, List
 
 import guardrails.magicbrush  # Registers guardrails as side effects.
 import guardrails.swe_bench
+import guardrails.claims_processing
 import dspy
 import os
 from agent_learning.live_loop import LiveExplorationLoop, LiveLoopConfig
@@ -195,6 +196,46 @@ class MagicBrushEnvironment:
         return json.dumps(info, indent=2), True
 
 
+@dataclass
+class ClaimsProcessingEnvironment:
+    dataset_path: Path
+
+    def __post_init__(self) -> None:
+        self.records = _load_records(self.dataset_path)
+        self.keys: List[str] = list(self.records.keys())
+        self.index = 0
+        self.current = None
+
+    def reset(self):
+        record = self.records[self.keys[self.index % len(self.keys)]]
+        self.current = record
+        metadata = {
+            "task_id": record["task_id"],
+            "domain": "claims-processing",
+            "ground_truth": record.get("ground_truth", "deny"),
+        }
+        return json.dumps(record["state"], indent=2), metadata
+
+    def step(self, action: str):
+        from guardrails import get_guardrail
+
+        record = self.current
+        guardrail = get_guardrail(record["task_id"], domain="claims-processing")
+        if guardrail is None:
+            raise RuntimeError(
+                f"No guardrail registered for task {record['task_id']} in domain claims-processing."
+            )
+        if hasattr(guardrail, "reset"):
+            guardrail.reset()
+        guardrail.validate(action, record.get("ground_truth", "deny"))
+        info = {
+            "task_id": record["task_id"],
+            "canonical": guardrail.canonical_answer(),
+        }
+        self.index += 1
+        return json.dumps(info, indent=2), True
+
+
 class GuardrailPolicy:
     """Stub policy that replays recorded actions for the current task."""
 
@@ -205,7 +246,13 @@ class GuardrailPolicy:
     def forward(self, state: str):  # dspy.Module interface
         task_id = self.get_task_id()
         record = self.records[task_id]
-        action = record["action"].get("patch") or record["action"].get("edit_prompt") or ""
+        action = (
+            record["action"].get("patch")
+            or record["action"].get("edit_prompt")
+            or record["action"].get("decision")
+            or record["action"].get("response")
+            or ""
+        )
         return SimpleNamespace(
             reasoning=f"Replaying recorded action for {task_id}",
             action=action,
@@ -226,6 +273,8 @@ def run_guardrail_loop(
         env = SweBenchEnvironment(dataset_path)
     elif domain == "magicbrush":
         env = MagicBrushEnvironment(dataset_path)
+    elif domain == "claims-processing":
+        env = ClaimsProcessingEnvironment(dataset_path)
     else:
         raise ValueError(f"Unsupported domain: {domain}")
 
@@ -255,7 +304,7 @@ def run_guardrail_loop(
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="Run continuous learning live loop demos")
-    parser.add_argument("--domain", choices=["swe-bench", "magicbrush"], required=True)
+    parser.add_argument("--domain", choices=["swe-bench", "magicbrush", "claims-processing"], required=True)
     parser.add_argument("--episodes", type=int, default=10)
     parser.add_argument("--ace", action="store_true", help="Enable ACE integration if configured")
     parser.add_argument(
@@ -268,6 +317,7 @@ def main() -> None:
     dataset = {
         "swe-bench": Path("data/swe_bench_samples/swe_bench_50.jsonl"),
         "magicbrush": Path("data/magicbrush_samples/magicbrush_50.jsonl"),
+        "claims-processing": Path("data/claims_samples/claims_20.jsonl"),
     }[args.domain]
 
     if not dataset.exists():

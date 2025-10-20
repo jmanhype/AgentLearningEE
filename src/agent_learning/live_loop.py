@@ -794,6 +794,7 @@ class LiveExplorationLoop:
             {
                 "timestamp": time.time(),
                 "output_dir": str(self.config.output_dir),
+                "domain": self.config.default_guardrail_domain,
             }
         )
 

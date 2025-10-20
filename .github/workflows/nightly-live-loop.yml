@@ -15,7 +15,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        domain: [swe-bench, magicbrush]
+        domain: [swe-bench, magicbrush, claims-processing]
 
     steps:
       - name: Checkout repository
@@ -56,6 +56,7 @@ jobs:
         run: |
           echo "ACE_ENABLED=1" >> "$GITHUB_ENV"
           echo "ACE_ARGS=--ace" >> "$GITHUB_ENV"
+          echo "ACE_DOMAIN_ID=${{ matrix.domain }}" >> "$GITHUB_ENV"
 
       - name: Initialize ACE database schema
         run: |
@@ -95,8 +96,23 @@ jobs:
             magicbrush)
               suite="data/magicbrush_samples/magicbrush_50.jsonl"
               ;;
+            claims-processing)
+              suite="data/claims_samples/claims_20.jsonl"
+              ;;
           esac
           python scripts/run_benchmark.py "$suite" --domain "${{ matrix.domain }}" --output "results/${{ matrix.domain }}_${{ github.run_id }}.json" --max-tasks 10
+
+      - name: Run guardrail integrity sweep
+        run: |
+          python scripts/run_guardrail_sweep.py --domain "${{ matrix.domain }}" --output artifacts/replay/guardrail_sweep.json
+
+      - name: Generate promotion review digest
+        run: |
+          python scripts/generate_promotion_digest.py --promotion-report artifacts/replay/promotion_report.json --output artifacts/replay/promotion_review.md
+
+      - name: Export Prometheus metrics
+        run: |
+          python scripts/export_prom_metrics.py --metrics live_loop_artifacts/metrics.json --promotion-report artifacts/replay/promotion_report.json --output live_loop_artifacts/metrics.prom
 
       - name: Summarize live loop artifacts
         if: always()
@@ -110,6 +126,12 @@ jobs:
             echo '#### ACE Metrics' >> "$GITHUB_STEP_SUMMARY"
             echo '```json' >> "$GITHUB_STEP_SUMMARY"
             jq '{total_ace_updates, ace_update_history}' live_loop_artifacts/metrics.json >> "$GITHUB_STEP_SUMMARY"
+            echo '```' >> "$GITHUB_STEP_SUMMARY"
+          fi
+          if [ -f live_loop_artifacts/metrics.prom ]; then
+            echo '#### Prometheus Metrics' >> "$GITHUB_STEP_SUMMARY"
+            echo '```' >> "$GITHUB_STEP_SUMMARY"
+            cat live_loop_artifacts/metrics.prom >> "$GITHUB_STEP_SUMMARY"
             echo '```' >> "$GITHUB_STEP_SUMMARY"
           fi
 
@@ -132,4 +154,5 @@ jobs:
             artifacts/policy_replay.pkl
             artifacts/policy_prev.pkl
             results/
+            live_loop_artifacts/metrics.prom
           if-no-files-found: ignore
