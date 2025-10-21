@@ -234,19 +234,16 @@ jobs:
             run_id="${{ github.run_id }}"
             repo="${{ github.repository }}"
             server="${{ github.server_url }}"
-            body=$(cat <<EOF
-Nightly ACE review - domain $domain (run $run_id)
-
-\`\`\`markdown
-$digest
-\`\`\`
-Reviewers: please confirm checklist completion and log an acknowledgment via script.
-
-[Artifacts]($server/$repo/actions/runs/$run_id)
-
-${reviewer_tag}: run "python scripts/log_reviewer_ack.py --domain $domain --run-id $run_id --reviewer <your-name>" to acknowledge.
-EOF
-)
+            printf -v body 'Nightly ACE review - domain %s (run %s)\n\n```markdown\n%s\n```\nReviewers: please confirm checklist completion and log an acknowledgment via script.\n\n[Artifacts](%s/%s/actions/runs/%s)\n\n%s: run "python scripts/log_reviewer_ack.py --domain %s --run-id %s --reviewer <your-name>" to acknowledge.' \
+              "$domain" \
+              "$run_id" \
+              "$digest" \
+              "$server" \
+              "$repo" \
+              "$run_id" \
+              "$reviewer_tag" \
+              "$domain" \
+              "$run_id"
             gh issue comment "$issue_number" --body "$body"
           else
             echo "No promotion review for ${{ matrix.domain }}; skipping comment"
