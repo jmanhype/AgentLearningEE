@@ -3,7 +3,7 @@ name: nightly-live-loop
 on:
   schedule:
     - cron: "0 9 * * *" # 09:00 UTC nightly
-  workflow_dispatch:
+  workflow_dispatch: {}
 
 permissions:
   contents: read
