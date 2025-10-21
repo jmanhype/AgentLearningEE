@@ -198,18 +198,23 @@ jobs:
           case "${{ matrix.domain }}" in
             swe-bench)
               issue_number="$REVIEW_ISSUE_NUMBER_SWE"
+              reviewer_tag='@ACE-SWE-Reviewers'
               ;;
             magicbrush)
               issue_number="$REVIEW_ISSUE_NUMBER_MAGICBRUSH"
+              reviewer_tag='@ACE-MagicBrush-Reviewers'
               ;;
             claims-processing)
               issue_number="$REVIEW_ISSUE_NUMBER_CLAIMS"
+              reviewer_tag='@ACE-Claims-Reviewers'
               ;;
             finance-qa)
               issue_number="$REVIEW_ISSUE_NUMBER_FINANCE"
+              reviewer_tag='@ACE-Finance-Reviewers'
               ;;
             *)
               issue_number="$REVIEW_ISSUE_NUMBER_DEFAULT"
+              reviewer_tag='@ACE-Reviewers'
               ;;
           esac
 
@@ -219,8 +224,9 @@ jobs:
           fi
 
           if [ -f artifacts/replay/promotion_review.md ]; then
-            body=$(printf "Nightly ACE review - domain %s (run %s)\n\n\`\`\`markdown\n%s\n\`\`\`\n[Artifacts](%s/%s/actions/runs/%s)" "${{ matrix.domain }}" "${{ github.run_id }}" "$(head -n 40 artifacts/replay/promotion_review.md)" "${{ github.server_url }}" "${{ github.repository }}" "${{ github.run_id }}")
-            gh issue comment "$issue_number" --body "$body"
+            digest=$(head -n 50 artifacts/replay/promotion_review.md)
+            body=$(printf "Nightly ACE review - domain %s (run %s)\n\n\`\`\`markdown\n%s\n\`\`\`\nReviewers: please confirm checklist completion and log an acknowledgment via script.\n\n[Artifacts](%s/%s/actions/runs/%s)" "${{ matrix.domain }}" "${{ github.run_id }}" "$digest" "${{ github.server_url }}" "${{ github.repository }}" "${{ github.run_id }}")
+            gh issue comment "$issue_number" --body "$body\n\n${reviewer_tag}: run \"python scripts/log_reviewer_ack.py --domain ${matrix.domain} --run-id ${github.run_id} --reviewer <your-name>\" to acknowledge."
           else
             echo "No promotion review for ${{ matrix.domain }}; skipping comment"
           fi
@@ -242,3 +248,11 @@ jobs:
             results/
             live_loop_artifacts/metrics.prom
           if-no-files-found: ignore
+
+      - name: Upload ACE playbook
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ace-playbook-${{ matrix.domain }}-${{ github.run_id }}
+          path: ace_playbook.db
+          if-no-files-found: error
