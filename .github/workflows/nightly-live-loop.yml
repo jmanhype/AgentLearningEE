@@ -6,6 +6,9 @@ on:
   workflow_dispatch: {}
   repository_dispatch:
     types: [nightly-live-loop]
+  push:
+    branches:
+      - nightly-manual
 
 permissions:
   contents: read
