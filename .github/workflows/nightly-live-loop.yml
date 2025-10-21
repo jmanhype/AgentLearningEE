@@ -4,6 +4,8 @@ on:
   schedule:
     - cron: "0 9 * * *" # 09:00 UTC nightly
   workflow_dispatch: {}
+  repository_dispatch:
+    types: [nightly-live-loop]
 
 permissions:
   contents: read
