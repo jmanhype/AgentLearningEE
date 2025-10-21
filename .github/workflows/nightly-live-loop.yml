@@ -3,7 +3,12 @@ name: nightly-live-loop
 on:
   schedule:
     - cron: "0 9 * * *" # 09:00 UTC nightly
-  workflow_dispatch: {}
+  workflow_dispatch:
+    inputs:
+      ace_enabled:
+        description: "Set to 0 to disable ACE playbook integration"
+        required: false
+        default: "1"
   repository_dispatch:
     types: [nightly-live-loop]
   push:
@@ -60,8 +65,13 @@ jobs:
         env:
           ACE_TOKEN: ${{ secrets.ACE_TOKEN }}
         run: |
-          echo "ACE_ENABLED=1" >> "$GITHUB_ENV"
-          echo "ACE_ARGS=--ace" >> "$GITHUB_ENV"
+          if [ "${{ github.event_name == 'workflow_dispatch' && github.event.inputs.ace_enabled == '0' }}" = "true" ]; then
+            echo "ACE_ENABLED=0" >> "$GITHUB_ENV"
+            echo "ACE_ARGS=" >> "$GITHUB_ENV"
+          else
+            echo "ACE_ENABLED=1" >> "$GITHUB_ENV"
+            echo "ACE_ARGS=--ace" >> "$GITHUB_ENV"
+          fi
           echo "ACE_DOMAIN_ID=${{ matrix.domain }}" >> "$GITHUB_ENV"
           echo "ACE_BOOTSTRAP_HELPFUL_TARGET=3" >> "$GITHUB_ENV"
           echo "ACE_NEGATIVE_FEEDBACK_INCREMENT=1" >> "$GITHUB_ENV"
