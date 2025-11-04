@@ -1,0 +1,292 @@
+name: weekly-self-improvement
+
+on:
+  schedule:
+    # Run every Monday at 09:00 UTC
+    - cron: "0 9 * * 1"
+  workflow_dispatch:
+    inputs:
+      focus_area:
+        description: "Focus area for this run (leave empty for general improvement)"
+        required: false
+        default: ""
+        type: choice
+        options:
+          - ""
+          - "code-quality"
+          - "bug-fixes"
+          - "documentation"
+          - "tests"
+          - "dependencies"
+          - "performance"
+          - "security"
+
+permissions:
+  contents: write
+  pull-requests: write
+  issues: write
+
+jobs:
+  self-improve:
+    name: Self-improvement with Claude Code
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # Full history for better context
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -e .[dev]
+          # Install optional dependencies for full analysis
+          if [ -f requirements.txt ]; then
+            pip install -r requirements.txt
+          fi
+
+      - name: Run existing tests (baseline)
+        id: baseline-tests
+        continue-on-error: true
+        run: |
+          if [ -d tests ]; then
+            pytest tests/ -v --tb=short || echo "TESTS_FAILED=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "TESTS_FAILED=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Generate improvement context
+        id: context
+        run: |
+          echo "## Current Repository State" > /tmp/improvement-context.md
+          echo "" >> /tmp/improvement-context.md
+
+          echo "### Recent Changes" >> /tmp/improvement-context.md
+          git log --oneline -10 >> /tmp/improvement-context.md
+          echo "" >> /tmp/improvement-context.md
+
+          echo "### Open Issues" >> /tmp/improvement-context.md
+          if command -v gh &> /dev/null; then
+            gh issue list --limit 10 --state open >> /tmp/improvement-context.md 2>&1 || echo "No issues or gh not authenticated" >> /tmp/improvement-context.md
+          else
+            echo "GitHub CLI not available" >> /tmp/improvement-context.md
+          fi
+          echo "" >> /tmp/improvement-context.md
+
+          echo "### Test Status" >> /tmp/improvement-context.md
+          if [ "${{ steps.baseline-tests.outputs.TESTS_FAILED }}" = "true" ]; then
+            echo "❌ Tests are currently failing - prioritize fixing these" >> /tmp/improvement-context.md
+          else
+            echo "✅ Tests are passing" >> /tmp/improvement-context.md
+          fi
+          echo "" >> /tmp/improvement-context.md
+
+          # Check for common issues
+          echo "### Code Health Indicators" >> /tmp/improvement-context.md
+          echo "- TODO comments: $(grep -r "TODO" --include="*.py" src/ | wc -l)" >> /tmp/improvement-context.md
+          echo "- FIXME comments: $(grep -r "FIXME" --include="*.py" src/ | wc -l)" >> /tmp/improvement-context.md
+          echo "- Python files: $(find src/ -name "*.py" | wc -l)" >> /tmp/improvement-context.md
+
+          cat /tmp/improvement-context.md
+
+      - name: Determine improvement focus
+        id: focus
+        run: |
+          FOCUS="${{ github.event.inputs.focus_area }}"
+          if [ -z "$FOCUS" ]; then
+            # Auto-determine focus based on repository state
+            if [ "${{ steps.baseline-tests.outputs.TESTS_FAILED }}" = "true" ]; then
+              FOCUS="bug-fixes"
+            else
+              # Rotate through different areas each week
+              WEEK_NUMBER=$(date +%V)
+              case $((WEEK_NUMBER % 4)) in
+                0) FOCUS="code-quality" ;;
+                1) FOCUS="documentation" ;;
+                2) FOCUS="tests" ;;
+                3) FOCUS="performance" ;;
+              esac
+            fi
+          fi
+          echo "focus=$FOCUS" >> "$GITHUB_OUTPUT"
+          echo "Improvement focus for this run: $FOCUS"
+
+      - name: Run Claude Code self-improvement
+        uses: anthropics/claude-code-action@v1
+        with:
+          # Comprehensive prompt based on focus area
+          prompt: |
+            You are performing weekly maintenance on the AgentLearningEE repository - a project that combines Early Experience learning with Agentic Context Engineering (ACE) for self-improving agents.
+
+            **Current Focus Area:** ${{ steps.focus.outputs.focus }}
+
+            **Context:**
+            $(cat /tmp/improvement-context.md)
+
+            **Your Tasks:**
+
+            ${{ steps.focus.outputs.focus == 'bug-fixes' && '
+            1. Review any failing tests and fix them
+            2. Search for FIXME and TODO comments and address critical ones
+            3. Look for common bug patterns (uncaught exceptions, edge cases, race conditions)
+            4. Check error handling in critical paths
+            5. Verify input validation in public APIs
+            ' || '' }}
+
+            ${{ steps.focus.outputs.focus == 'code-quality' && '
+            1. Identify code duplication and refactor into reusable functions
+            2. Improve code readability and maintainability
+            3. Add type hints where missing
+            4. Improve variable and function naming
+            5. Remove dead code and unused imports
+            6. Apply consistent code style
+            ' || '' }}
+
+            ${{ steps.focus.outputs.focus == 'documentation' && '
+            1. Update README.md if outdated or unclear
+            2. Add/improve docstrings for public functions and classes
+            3. Update code examples in docs/ if they are stale
+            4. Add inline comments for complex logic
+            5. Check for broken links in documentation
+            6. Ensure documentation matches current code
+            ' || '' }}
+
+            ${{ steps.focus.outputs.focus == 'tests' && '
+            1. Identify untested or undertested modules
+            2. Add unit tests for critical functions
+            3. Improve test coverage for edge cases
+            4. Add integration tests where needed
+            5. Fix flaky tests
+            6. Add test documentation
+            ' || '' }}
+
+            ${{ steps.focus.outputs.focus == 'dependencies' && '
+            1. Check for outdated dependencies in setup.py and requirements files
+            2. Review security vulnerabilities in dependencies
+            3. Update dependencies where safe to do so
+            4. Remove unused dependencies
+            5. Add missing dependency specifications
+            ' || '' }}
+
+            ${{ steps.focus.outputs.focus == 'performance' && '
+            1. Identify performance bottlenecks in hot paths
+            2. Optimize expensive operations (file I/O, computations)
+            3. Add caching where appropriate
+            4. Improve algorithm efficiency
+            5. Reduce memory usage in data-heavy operations
+            ' || '' }}
+
+            ${{ steps.focus.outputs.focus == 'security' && '
+            1. Review input validation and sanitization
+            2. Check for potential injection vulnerabilities
+            3. Ensure secrets are not hardcoded
+            4. Review file and path operations for safety
+            5. Check for insecure dependencies
+            6. Improve error messages to not leak sensitive info
+            ' || '' }}
+
+            **Guidelines:**
+            - Make surgical, focused improvements rather than sweeping changes
+            - Ensure all changes are tested and working
+            - Preserve existing functionality
+            - Follow the project's coding conventions
+            - Be conservative with changes to core algorithms
+            - Document any significant changes
+            - Create a clear commit message explaining your improvements
+
+            **Output:**
+            After making improvements, create a summary of:
+            1. What you analyzed
+            2. What issues you found
+            3. What improvements you made
+            4. Any issues that need human attention
+
+            Please proceed with the analysis and improvements.
+
+          # Create a PR with improvements
+          create_pr: true
+          pr_title: "chore: weekly self-improvement (${{ steps.focus.outputs.focus }})"
+          pr_body: |
+            ## Weekly Self-Improvement Run
+
+            **Focus Area:** ${{ steps.focus.outputs.focus }}
+            **Run ID:** ${{ github.run_id }}
+            **Triggered:** ${{ github.event_name }}
+
+            This PR contains automated maintenance and improvements generated by Claude Code.
+
+            ### Context
+            - Base branch: ${{ github.ref_name }}
+            - Tests were ${{ steps.baseline-tests.outputs.TESTS_FAILED == 'true' && 'failing ❌' || 'passing ✅' }} before improvements
+
+            ### Review Checklist
+            - [ ] Changes are relevant to the focus area
+            - [ ] No breaking changes introduced
+            - [ ] Tests pass
+            - [ ] Code quality improved
+            - [ ] Documentation updated if needed
+
+            ---
+
+            *Generated by the weekly-self-improvement workflow*
+
+          # Branch naming
+          branch_prefix: "claude/weekly-improvement"
+
+          # Additional configuration
+          max_iterations: 20
+          auto_fix_lint: true
+
+      - name: Run tests after improvements
+        if: always()
+        id: post-tests
+        continue-on-error: true
+        run: |
+          if [ -d tests ]; then
+            pytest tests/ -v --tb=short || echo "TESTS_FAILED=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Generate improvement summary
+        if: always()
+        run: |
+          echo "## Weekly Self-Improvement Summary" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "**Focus Area:** ${{ steps.focus.outputs.focus }}" >> "$GITHUB_STEP_SUMMARY"
+          echo "**Run ID:** ${{ github.run_id }}" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+
+          echo "### Test Status" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Before: ${{ steps.baseline-tests.outputs.TESTS_FAILED == 'true' && '❌ Failing' || '✅ Passing' }}" >> "$GITHUB_STEP_SUMMARY"
+          echo "- After: ${{ steps.post-tests.outputs.TESTS_FAILED == 'true' && '❌ Failing' || '✅ Passing' }}" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+
+          if [ -f /tmp/improvement-context.md ]; then
+            echo "### Repository Context" >> "$GITHUB_STEP_SUMMARY"
+            echo '```' >> "$GITHUB_STEP_SUMMARY"
+            cat /tmp/improvement-context.md >> "$GITHUB_STEP_SUMMARY"
+            echo '```' >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+      - name: Create tracking issue on failure
+        if: failure()
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          if command -v gh &> /dev/null; then
+            gh issue create \
+              --title "Weekly self-improvement workflow failed (${{ steps.focus.outputs.focus }})" \
+              --body "The weekly self-improvement workflow failed during the ${{ steps.focus.outputs.focus }} run.
+
+              **Run ID:** ${{ github.run_id }}
+              **Run URL:** ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+              **Focus Area:** ${{ steps.focus.outputs.focus }}
+
+              Please review the workflow logs for details." \
+              --label "automation,maintenance"
+          fi
