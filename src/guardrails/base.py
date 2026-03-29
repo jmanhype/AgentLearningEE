@@ -24,10 +24,29 @@ DecimalCalculator = Callable[[], Decimal]
 
 
 def _quantizer(decimals: int) -> Decimal:
+    """
+    Create a Decimal quantizer for rounding to specified decimal places.
+
+    Args:
+        decimals: Number of decimal places
+
+    Returns:
+        Decimal quantizer (e.g., 0.01 for 2 decimals)
+    """
     return Decimal(1).scaleb(-decimals)
 
 
 def _format_value(value: Decimal, decimals: Optional[int]) -> str:
+    """
+    Format a Decimal value to string with optional decimal places.
+
+    Args:
+        value: The Decimal value to format
+        decimals: Number of decimal places (None for automatic normalization)
+
+    Returns:
+        Formatted string representation of the value
+    """
     if decimals is not None:
         quantizer = _quantizer(decimals)
         value = value.quantize(quantizer)
@@ -38,6 +57,15 @@ def _format_value(value: Decimal, decimals: Optional[int]) -> str:
 
 
 def _extract_final_token(text: str) -> Optional[str]:
+    """
+    Extract the last numeric token from text (supports decimals and percentages).
+
+    Args:
+        text: Input text to search for numeric values
+
+    Returns:
+        Last numeric token found, or None if no matches
+    """
     matches = re.findall(r"-?\d+(?:\.\d+)?%?", text)
     if not matches:
         return None
@@ -45,6 +73,19 @@ def _extract_final_token(text: str) -> Optional[str]:
 
 
 def _to_decimal(value: str, value_format: str) -> Decimal:
+    """
+    Convert a string value to Decimal, handling format-specific preprocessing.
+
+    Args:
+        value: String value to convert
+        value_format: Format type ("number", "percent", or "string")
+
+    Returns:
+        Decimal representation of the value
+
+    Raises:
+        InvalidOperation: If value cannot be converted to Decimal
+    """
     cleaned = value.strip()
     if value_format == "percent":
         cleaned = cleaned.rstrip("%")
@@ -148,13 +189,36 @@ def constant_guardrail(
     format: str = "number",
     decimals: Optional[int] = None,
 ) -> NumericGuardrail:
-    """Create a guardrail that always returns a canonical value."""
+    """
+    Create a guardrail that always returns a canonical value.
 
-    def _calculator():
+    Args:
+        instructions: Guardrail validation instructions
+        value: The canonical value to return
+        format: Output format ("number" or "percent")
+        decimals: Number of decimal places for formatting
+
+    Returns:
+        NumericGuardrail configured with the constant value
+
+    Raises:
+        ValueError: If value is empty or format is invalid
+    """
+    if not instructions:
+        raise ValueError("instructions must be a non-empty string")
+    if not value:
+        raise ValueError("value must be a non-empty string")
+    if format not in {"number", "percent", "string"}:
+        raise ValueError(f"format must be 'number', 'percent', or 'string', got '{format}'")
+
+    def _calculator() -> Decimal:
         text = value.rstrip("%")
         if format in {"number", "percent"}:
-            return Decimal(text)
-        return value
+            try:
+                return Decimal(text)
+            except (InvalidOperation, ValueError) as e:
+                raise ValueError(f"Invalid numeric value '{text}': {e}")
+        return Decimal(0)  # Fallback for string format
 
     return NumericGuardrail(
         instructions=instructions,

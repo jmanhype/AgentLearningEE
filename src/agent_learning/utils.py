@@ -143,6 +143,7 @@ def load_module(file_path: Union[str, Path]) -> dspy.Module:
 
     Raises:
         FileNotFoundError: If file doesn't exist
+        ValueError: If file is empty or corrupted
 
     Example:
         >>> world_model = load_module("artifacts/world_model.pkl")
@@ -155,9 +156,21 @@ def load_module(file_path: Union[str, Path]) -> dspy.Module:
     if not file_path.exists():
         raise FileNotFoundError(f"Module file not found: {file_path}")
 
+    if file_path.stat().st_size == 0:
+        raise ValueError(f"Module file is empty: {file_path}")
+
     # DSPy 2.0 modules are saved as pickle files
-    with open(file_path, "rb") as f:
-        return pickle.load(f)
+    try:
+        with open(file_path, "rb") as f:
+            module = pickle.load(f)
+
+        # Validate loaded module is a DSPy module
+        if not isinstance(module, dspy.Module):
+            raise ValueError(f"Loaded object is not a DSPy module: {type(module)}")
+
+        return module
+    except (pickle.UnpicklingError, EOFError) as e:
+        raise ValueError(f"Failed to load module from {file_path}: {e}")
 
 
 def load_metadata(file_path: Union[str, Path]) -> Optional[Dict[str, Any]]:
@@ -169,15 +182,27 @@ def load_metadata(file_path: Union[str, Path]) -> Optional[Dict[str, Any]]:
 
     Returns:
         Metadata dictionary if exists, None otherwise
+
+    Raises:
+        ValueError: If metadata file is corrupted or invalid JSON
     """
     file_path = Path(file_path)
     metadata_path = file_path.with_suffix(".meta.json")
 
-    if metadata_path.exists():
-        with open(metadata_path) as f:
-            return json.load(f)
+    if not metadata_path.exists():
+        return None
 
-    return None
+    try:
+        with open(metadata_path, encoding="utf-8") as f:
+            metadata = json.load(f)
+
+        # Validate metadata is a dictionary
+        if not isinstance(metadata, dict):
+            raise ValueError(f"Metadata must be a dictionary, got {type(metadata)}")
+
+        return metadata
+    except json.JSONDecodeError as e:
+        raise ValueError(f"Failed to parse metadata from {metadata_path}: {e}")
 
 
 # ============================================================================
@@ -393,6 +418,20 @@ def configure_lm(
         ...     device="cuda"
         ... )
     """
+    # Validate inputs
+    if not model_name or not isinstance(model_name, str):
+        raise ValueError("model_name must be a non-empty string")
+
+    if not provider or not isinstance(provider, str):
+        raise ValueError("provider must be a non-empty string")
+
+    supported_providers = {"openai", "local", "anthropic"}
+    if provider not in supported_providers:
+        raise ValueError(
+            f"Unsupported provider '{provider}'. "
+            f"Supported providers: {', '.join(supported_providers)}"
+        )
+
     if provider == "openai":
         lm = dspy.OpenAI(model=model_name, **kwargs)
 
